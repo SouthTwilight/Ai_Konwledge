@@ -1,4 +1,4 @@
-"""L1 Filter — Relevance scoring and classification via DeepSeek-V3.
+"""L1 Filter — Relevance scoring and classification via GLM-4.7.
 
 Evaluates articles on a 1-10 relevance scale and assigns category tags.
 Articles scoring below the threshold are filtered out.
@@ -41,7 +41,7 @@ Content (first 2000 chars):
 
 
 class L1Filter:
-    """L1 relevance filter using DeepSeek-V3 (deepseek-chat)."""
+    """L1 relevance filter using GLM-4.7."""
 
     def __init__(self, config: ModelConfig):
         self.config = config

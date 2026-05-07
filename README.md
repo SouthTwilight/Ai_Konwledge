@@ -2,7 +2,7 @@
 
 AI 驱动的个人知识库流水线：RSS / Web URL → AI 处理 → Obsidian Vault
 
-自动从 RSS 订阅源或网页 URL 抓取文章，使用 DeepSeek-V3 筛选相关内容，DeepSeek-R1 生成结构化摘要，最终输出格式美观的 Markdown 笔记到 Obsidian 知识库。
+自动从 RSS 订阅源或网页 URL 抓取文章，使用智谱 GLM 系列模型进行三级处理：GLM-4.7 筛选相关性并生成摘要，GLM-5.1 进行深度分析，最终输出格式美观的 Markdown 笔记到 Obsidian 知识库。
 
 ---
 
@@ -11,15 +11,15 @@ AI 驱动的个人知识库流水线：RSS / Web URL → AI 处理 → Obsidian 
 ```
 ┌──────────────┐     ┌───────────┐     ┌──────────┐     ┌──────────┐     ┌────────────────┐
 │   内容源     │────▶│   抓取    │────▶│  去重    │────▶│ L1 筛选  │────▶│   L2 摘要      │
-│  RSS / URL   │     │ trafilatura│     │  SQLite  │     │ DeepSeek │     │ DeepSeek-R1    │
-│              │     │ feedparser │     │          │     │   V3     │     │                │
+│  RSS / URL   │     │ trafilatura│     │  SQLite  │     │ GLM-4.7  │     │   GLM-4.7      │
+│              │     │ feedparser │     │          │     │          │     │                │
 └──────────────┘     └───────────┘     └──────────┘     └──────────┘     └───────┬────────┘
                                                                             │
                                                                             ▼
                                                                    ┌────────────────┐
                                                                    │ Obsidian 写入  │
-                                                                   │ Markdown +     │
-                                                                   │ YAML frontmatter│
+                                                                   │  Markdown +    │
+                                                                   │  YAML frontmatter│
                                                                    └────────────────┘
 ```
 
@@ -27,9 +27,17 @@ AI 驱动的个人知识库流水线：RSS / Web URL → AI 处理 → Obsidian 
 
 1. **抓取 (Extract)** — 抓取 RSS 订阅源或单个 URL，用 trafilatura 解析正文
 2. **去重 (Deduplicate)** — 基于 SQLite 的 URL/内容哈希去重，跳过已处理文章
-3. **L1 筛选 (Filter)** — DeepSeek-V3 评估相关性（1-10 分）、分配标签、检测语言
-4. **L2 摘要 (Summarize)** — DeepSeek-R1 生成 TL;DR、详细摘要、关键要点、关联主题
+3. **L1 筛选 (Filter)** — GLM-4.7 评估相关性（1-10 分）、分配标签、检测语言
+4. **L2 摘要 (Summarize)** — GLM-4.7 生成 TL;DR、详细摘要、关键要点、关联主题
 5. **写入 (Write)** — 格式化为 Obsidian 风格的 Markdown，含 YAML frontmatter
+
+**AI 模型配置（智谱清言）：**
+
+| 处理层级 | 模型 | 用途 |
+|----------|------|------|
+| L1 筛选 | GLM-4.7 | 相关性评分、标签分类、语言检测 |
+| L2 摘要 | GLM-4.7 | 结构化摘要、关键要点、关联主题 |
+| L3 深度分析（计划中） | GLM-5.1 | 深度内容分析、主题聚类 |
 
 ---
 
@@ -38,7 +46,7 @@ AI 驱动的个人知识库流水线：RSS / Web URL → AI 处理 → Obsidian 
 ### 环境要求
 
 - Python 3.11+
-- DeepSeek API 密钥（[点击获取](https://platform.deepseek.com/)）
+- 智谱 API 密钥（[点击获取](https://open.bigmodel.cn/)）
 
 ### 安装步骤
 
@@ -58,13 +66,13 @@ pip install -r pipeline/requirements.txt
 在项目根目录创建 `.env` 文件：
 
 ```bash
-echo 'DEEPSEEK_API_KEY=sk-你的密钥' > .env
+echo 'ZHIPU_API_KEY=你的密钥' > .env
 ```
 
 或者通过环境变量设置：
 
 ```bash
-export DEEPSEEK_API_KEY=sk-你的密钥
+export ZHIPU_API_KEY=你的密钥
 ```
 
 ### 运行流水线
@@ -136,10 +144,11 @@ class RSSSource:
 
 | 设置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `provider` | deepseek | API 提供商 |
-| `l1_model` | deepseek-chat | L1 相关性评分模型 |
-| `l2_model` | deepseek-reasoner | L2 摘要生成模型 |
-| `api_base` | https://api.deepseek.com | API 接口地址 |
+| `provider` | zhipu | API 提供商 |
+| `l1_model` | glm-4.7 | L1 相关性评分模型 |
+| `l2_model` | glm-4.7 | L2 摘要生成模型 |
+| `l3_model` | glm-5.1 | L3 深度分析模型（计划中） |
+| `api_base` | https://open.bigmodel.cn/api/paas/v4 | 智谱 API 接口地址 |
 | `relevance_threshold` | 6 | 通过 L1 筛选的最低分数（1-10） |
 | `max_articles_per_run` | 50 | 每次运行硬上限 |
 
@@ -147,7 +156,7 @@ class RSSSource:
 
 | 变量 | 是否必填 | 说明 |
 |------|----------|------|
-| `DEEPSEEK_API_KEY` | 是 | DeepSeek API 密钥，用于 LLM 调用 |
+| `ZHIPU_API_KEY` | 是 | 智谱 API 密钥，用于 LLM 调用 |
 
 ---
 
@@ -238,7 +247,7 @@ content_hash: a1b2c3d4e5f6
 | trafilatura | >=1.6.0 | 网页正文提取 |
 | feedparser | >=6.0.0 | RSS/Atom 订阅源解析 |
 | pyyaml | >=6.0 | YAML frontmatter 生成 |
-| openai | >=1.0.0 | OpenAI 兼容 API 客户端（用于 DeepSeek） |
+| openai | >=1.0.0 | OpenAI 兼容 API 客户端（用于智谱 API） |
 | httpx | >=0.25.0 | HTTP 客户端 |
 | python-dotenv | >=1.0.0 | .env 文件加载 |
 | pytest | >=7.0.0 | 测试框架 |
@@ -267,7 +276,7 @@ pytest pipeline/tests/test_l1_filter.py -v
 | web_extractor.py | 3 | URL 提取、批量模式 |
 | dedup.py | 5 | 去重、URL 标准化、SQLite |
 | l1_filter.py | 4 | 相关性评分、阈值筛选、错误处理 |
-| l2_summarizer.py | 5 | 摘要生成、R1 think 块剥离、JSON 解析 |
+| l2_summarizer.py | 5 | 摘要生成、JSON 解析、错误处理 |
 | obsidian_writer.py | 11 | frontmatter、目录路由、文件名冲突、批量写入 |
 | config.py | 5 | 默认配置、环境变量加载 |
 | models.py | 5 | Article 数据模型、哈希计算、序列化 |
@@ -295,8 +304,8 @@ knowledge-base/
 │   │   ├── rss_fetcher.py       ← RSS 订阅源抓取 + 正文提取
 │   │   └── web_extractor.py     ← 单 URL 正文提取
 │   ├── processors/              ← AI 处理器
-│   │   ├── l1_filter.py         ← L1 相关性评分（DeepSeek-V3）
-│   │   └── l2_summarizer.py     ← L2 摘要生成（DeepSeek-R1）
+│   │   ├── l1_filter.py         ← L1 相关性评分（GLM-4.7）
+│   │   └── l2_summarizer.py     ← L2 摘要生成（GLM-4.7）
 │   ├── formatters/              ← 格式化输出
 │   │   └── obsidian_writer.py   ← Markdown 格式化 + 文件写入
 │   ├── utils/                   ← 工具模块
@@ -319,9 +328,9 @@ knowledge-base/
 
 ## 开发路线图
 
-- [x] **Phase 1（M0+M1）** — 核心流水线：RSS/Web 抓取、去重、L1 筛选、L2 摘要、Obsidian 写入
+- [x] **Phase 1（M0+M1）** — 核心流水线：RSS/Web 抓取、去重、L1 筛选（GLM-4.7）、L2 摘要（GLM-4.7）、Obsidian 写入
 - [ ] **Phase 2** — Hermes Cron 定时调度、GitHub 提取器、邮件提取器
-- [ ] **Phase 3** — L3 深度分析（Claude Sonnet）、主题聚类、MOC 自动生成
+- [ ] **Phase 3** — L3 深度分析（GLM-5.1）、主题聚类、MOC 自动生成
 
 ---
 

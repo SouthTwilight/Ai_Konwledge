@@ -30,11 +30,11 @@ class RSSSource:
 
 @dataclass
 class ModelConfig:
-    provider: str = "deepseek"
-    l1_model: str = "deepseek-chat"
-    l2_model: str = "deepseek-reasoner"
-    l3_model: str = "claude-sonnet-4-20250514"
-    api_base: str = "https://api.deepseek.com"
+    provider: str = "zhipu"
+    l1_model: str = "glm-4.7"
+    l2_model: str = "glm-4.7"
+    l3_model: str = "glm-5.1"
+    api_base: str = "https://open.bigmodel.cn/api/paas/v4"
     api_key: str = ""
     max_tokens_l1: int = 500
     max_tokens_l2: int = 2000
@@ -54,7 +54,7 @@ class PipelineConfig:
     def __post_init__(self):
         # Load API key from env
         if not self.model.api_key:
-            self.model.api_key = os.getenv('DEEPSEEK_API_KEY', '')
+            self.model.api_key = os.getenv('ZHIPU_API_KEY', '')
         # Default RSS sources
         if not self.rss_sources:
             self.rss_sources = [

@@ -18,8 +18,8 @@ def test_rss_source():
 
 def test_model_config_defaults():
     mc = ModelConfig()
-    assert mc.l1_model == "deepseek-chat"
-    assert mc.l2_model == "deepseek-reasoner"
+    assert mc.l1_model == "glm-4.7"
+    assert mc.l2_model == "glm-4.7"
     assert mc.max_tokens_l1 == 500
 
 

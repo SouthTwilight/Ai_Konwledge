@@ -45,7 +45,7 @@ def _mock_summary_response(tldr, summary, key_points, related_topics):
 
 
 def _mock_think_response(tldr, summary, key_points, related_topics):
-    """Simulate DeepSeek-R1 response with <think/> block."""
+    """Simulate model response with <think/> block (compatibility test)."""
     mock_resp = MagicMock()
     mock_resp.choices = [MagicMock()]
     body = json.dumps({
@@ -79,7 +79,7 @@ class TestL2Summarizer:
         assert len(result.related_topics) == 3
 
     @patch("pipeline.processors.l2_summarizer.OpenAI")
-    def test_deepseek_r1_think_block(self, mock_openai_cls, l1_article, summarizer):
+    def test_think_block_compatibility(self, mock_openai_cls, l1_article, summarizer):
         """Verify <think/> blocks are correctly stripped."""
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client

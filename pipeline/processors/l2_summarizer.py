@@ -1,4 +1,4 @@
-"""L2 Summarizer — Structured summary generation via DeepSeek-R1.
+"""L2 Summarizer — Structured summary generation via GLM-4.7.
 
 Produces a structured summary with key points, one-line TL;DR,
 and related topics for each article that passed L1 filtering.
@@ -47,7 +47,7 @@ Content:
 
 
 class L2Summarizer:
-    """L2 structured summarizer using DeepSeek-R1 (deepseek-reasoner)."""
+    """L2 structured summarizer using GLM-4.7."""
 
     def __init__(self, config: ModelConfig):
         self.config = config
@@ -80,7 +80,6 @@ class L2Summarizer:
             )
 
             raw = response.choices[0].message.content
-            # DeepSeek-R1 includes <think/> blocks — extract JSON after closing tag
             json_str = self._extract_json(raw)
             result = json.loads(json_str)
 
@@ -120,10 +119,9 @@ class L2Summarizer:
 
     @staticmethod
     def _extract_json(text: str) -> str:
-        """Extract JSON from DeepSeek-R1 response (may contain <think/> blocks)."""
-        # Strip <think...</think?> blocks
+        """Extract JSON from model response (handles <think/> blocks if present)."""
         import re
-        # Remove think blocks
+        # Strip <think...</think?> blocks (kept for compatibility)
         cleaned = re.sub(r'<think\b[^>]*>.*?</think\s*>', '', text, flags=re.DOTALL)
         # Try to find JSON object
         match = re.search(r'\{[^{}]*\}', cleaned, re.DOTALL)
