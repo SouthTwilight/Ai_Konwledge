@@ -104,6 +104,12 @@ python -m pipeline.main --source rss --dry-run
 # 限制最多处理 5 篇文章
 python -m pipeline.main --source rss --limit 5
 
+# 深挖已处理文章中的引用链接（双向 wikilink）
+python -m pipeline.main --source resolve --from "vault/SouthTwilight-Obsidian/南国微光/个人知识库/2-Articles/2026-05-08/[S8] some-article.md"
+
+# 深挖时限制最多抓取 3 篇引用文章
+python -m pipeline.main --source resolve --from "path/to/article.md" --max-links 3
+
 # 详细日志输出
 python -m pipeline.main --source rss --log-level DEBUG
 ```
@@ -118,9 +124,11 @@ python -m pipeline.main [选项]
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--source` | `rss`、`url` 或 `feishu` | `rss` | 内容来源类型 |
+| `--source` | `rss`、`url`、`feishu` 或 `resolve` | `rss` | 内容来源类型 |
 | `--url` | 字符串 | 无 | 要处理的单个 URL（使用 `--source url` 时必填） |
 | `--feishu-url` | 字符串 | 无 | 飞书文档 URL（使用 `--source feishu` 时必填） |
+| `--from` | 文件路径 | 无 | 已处理文章的 .md 路径（使用 `--source resolve` 时必填） |
+| `--max-links` | 整数 | 5 | 深挖时最多抓取的引用文章数（使用 `--source resolve`） |
 | `--config` | 文件路径 | 无 | RSS 源配置文件（YAML 格式，不指定则使用内置默认源） |
 | `--dry-run` | 开关 | False | 仅抓取 + 去重，跳过 LLM 调用和文件写入 |
 | `--limit` | 整数 | 无 | 最多处理的文章数量 |
@@ -329,7 +337,7 @@ pytest pipeline/tests/ -v
 pytest pipeline/tests/test_l1_filter.py -v
 ```
 
-共 **77 个测试**，覆盖 10 个测试文件。所有外部依赖（feedparser、trafilatura、OpenAI API、飞书 API）均已 mock，无需网络连接。
+共 **110 个测试**，覆盖 11 个测试文件。所有外部依赖（feedparser、trafilatura、OpenAI API、飞书 API）均已 mock，无需网络连接。
 
 | 模块 | 测试数 | 覆盖范围 |
 |------|--------|----------|
@@ -340,9 +348,10 @@ pytest pipeline/tests/test_l1_filter.py -v
 | dedup.py | 5 | 去重、URL 标准化、SQLite |
 | l1_filter.py | 4 | 相关性评分、阈值筛选、错误处理 |
 | l2_summarizer.py | 5 | 摘要生成、JSON 解析、错误处理 |
-| obsidian_writer.py | 15 | frontmatter、目录路由、文件名冲突、日期子目录、评分分层、评分前缀、批量写入 |
+| link_resolver.py | 22 | 链接提取、过滤、frontmatter 解析、编排流程 |
+| obsidian_writer.py | 23 | frontmatter、目录路由、文件名冲突、评分分层、双向链接回写 |
 | config.py | 9 | 默认配置、YAML 加载、enabled 字段、环境变量 |
-| models.py | 5 | Article 数据模型、哈希计算、序列化 |
+| models.py | 9 | Article 数据模型、哈希计算、序列化、linked_urls/referenced_by |
 
 ---
 
@@ -374,12 +383,13 @@ knowledge-base/
 │   │   └── feishu_extractor.py  ← 飞书文档提取（开放平台 API）
 │   ├── processors/              ← AI 处理器
 │   │   ├── l1_filter.py         ← L1 相关性评分（GLM-4.7）
-│   │   └── l2_summarizer.py     ← L2 摘要生成（GLM-4.7）
+│   │   ├── l2_summarizer.py     ← L2 摘要生成（GLM-4.7）
+│   │   └── link_resolver.py    ← 引用链接深挖 + 双向 wikilink
 │   ├── formatters/              ← 格式化输出
 │   │   └── obsidian_writer.py   ← Markdown 格式化 + 日期目录 + 评分分层
 │   ├── utils/                   ← 工具模块
 │   │   └── dedup.py             ← SQLite 去重存储
-│   └── tests/                   ← 77 个 pytest 测试
+│   └── tests/                   ← 110 个 pytest 测试
 ├── vault/                       ← Obsidian 知识库
 │   └── SouthTwilight-Obsidian/  ← Obsidian 仓库根目录
 │       ├── .obsidian/
@@ -402,6 +412,7 @@ knowledge-base/
 - [x] **Phase 1（M0+M1）** — 核心流水线：RSS/Web 抓取、去重、L1 筛选（GLM-4.7）、L2 摘要（GLM-4.7）、Obsidian 写入
 - [x] **Phase 1.5（增强）** — 评分分层内容深度、日期子目录、文件名评分前缀、YAML 配置文件支持
 - [x] **Phase 2a（飞书提取器）** — 飞书文档提取：开放平台 API 鉴权、tenant_access_token 缓存、Markdown 原文提取
+- [x] **Phase 2a+（链接深挖）** — 正文超链接保留、引用文章深挖（`--source resolve`）、双向 `[[wikilink]]`、Obsidian 笔记互联
 - [ ] **Phase 2b** — Hermes Cron 定时调度、GitHub 提取器、邮件提取器
 - [ ] **Phase 3** — L3 深度分析（GLM-5.1）、主题聚类、MOC 自动生成
 
