@@ -12,7 +12,6 @@ class ArticleSource(str, Enum):
     GITHUB = "github"
     EMAIL = "email"
     MANUAL = "manual"
-    FEISHU = "feishu"
 
 
 class ProcessingLevel(str, Enum):
