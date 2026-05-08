@@ -205,19 +205,54 @@ class Pipeline:
             logger.error(f"Unknown source: {source}")
             return []
 
+    def run_resolve(self, article_path: str, max_links: int = 5) -> dict:
+        """Run link resolution on a single processed article.
+
+        Args:
+            article_path: Path to the .md file in vault.
+            max_links: Maximum linked articles to resolve.
+
+        Returns:
+            Stats dict from link_resolver.
+        """
+        from pipeline.processors.link_resolver import resolve_linked_articles
+
+        start_time = time.time()
+
+        logger.info(f"=== Link resolution start: path={article_path} max_links={max_links} ===")
+        stats = resolve_linked_articles(article_path, self, max_links)
+
+        elapsed = time.time() - start_time
+        logger.info(
+            f"=== Link resolution complete in {elapsed:.1f}s: "
+            f"{stats['links_found']} found, {stats['fetched']} fetched, "
+            f"{stats['written']} written, {stats['errors']} errors ==="
+        )
+
+        self.dedup.close()
+        return stats
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Personal AI Knowledge Base Pipeline"
     )
     parser.add_argument(
-        "--source", choices=["rss", "url", "feishu"], default="rss",
+        "--source", choices=["rss", "url", "feishu", "resolve"], default="rss",
         help="Content source type"
     )
     parser.add_argument("--url", help="Single URL to process (with --source url)")
     parser.add_argument(
         "--feishu-url", type=str, default=None,
         help="Feishu document URL (with --source feishu)"
+    )
+    parser.add_argument(
+        "--from", dest="from_path", type=str, default=None,
+        help="Path to processed article .md file (with --source resolve)"
+    )
+    parser.add_argument(
+        "--max-links", type=int, default=5,
+        help="Max linked articles to resolve (with --source resolve, default: 5)"
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -237,6 +272,22 @@ def main():
     config = load_config(args.config)
     if args.source == "rss":
         logger.info(f"Loaded {len(config.rss_sources)} RSS source(s) from config")
+
+    # Handle --source resolve separately (operates on existing .md file)
+    if args.source == "resolve":
+        if not args.from_path:
+            logger.error("--from <path> required when --source resolve")
+            sys.exit(1)
+        pipeline = Pipeline(config)
+        stats = pipeline.run_resolve(args.from_path, max_links=args.max_links)
+        print(f"\n{'='*50}")
+        print(f"Link Resolution Summary:")
+        for k, v in stats.items():
+            print(f"  {k}: {v}")
+        print(f"  Log: {log_path}")
+        print(f"{'='*50}\n")
+        sys.exit(0 if stats["errors"] == 0 else 1)
+
     pipeline = Pipeline(config)
     stats = pipeline.run(
         source=args.source,
