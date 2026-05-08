@@ -64,6 +64,7 @@ Given an article's title and content, evaluate:
 
 IMPORTANT: You must respond with ONLY a valid JSON object, no other text.
 Format: {"relevance_score": <int>, "tags": ["<tag>", ...], "language": "<code>", "reason": "<text>"}
+IMPORTANT: The "reason" field MUST be written in Chinese (中文), regardless of the source article language.
 """
 
 USER_PROMPT_TEMPLATE = """\

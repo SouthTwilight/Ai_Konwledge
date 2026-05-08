@@ -36,7 +36,7 @@ Rules:
 - summary: 3-5 sentences, cover what/why/how
 - key_points: 3-5 bullet points, each a standalone insight
 - related_topics: 2-4 topics this relates to (for knowledge graph linking)
-- Write in the same language as the source article
+- ALL text fields (tldr, summary, key_points, related_topics) MUST be written in Chinese (中文), regardless of the source article language
 - Be factual, no speculation
 """
 
@@ -62,7 +62,7 @@ Rules:
 - key_points: 4-6 bullet points, each a standalone insight with detail
 - related_topics: 2-4 topics this relates to (for knowledge graph linking)
 - content_preserved: Preserve ALL substantive paragraphs from the original. Remove only boilerplate (ads, nav, bios). Readers should get the full article experience.
-- Write in the same language as the source article
+- ALL text fields (tldr, summary, key_points, related_topics) MUST be written in Chinese (中文), regardless of the source article language
 - Be factual, no speculation
 """
 
