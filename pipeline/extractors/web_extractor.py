@@ -27,6 +27,7 @@ def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
             include_comments=False,
             include_tables=True,
             favor_precision=True,
+            include_links=True,
         )
         if not content:
             logger.warning(f"Failed to extract content: {url}")
