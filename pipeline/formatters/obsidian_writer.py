@@ -170,3 +170,109 @@ class ObsidianWriter:
         """Preview the formatted content without writing to disk."""
         _, content = self.format_article(article)
         return content
+
+    def append_references(self, article_path: Path, linked_articles: List) -> None:
+        """Append a ## References section with [[wikilinks]] to an existing article.
+
+        Inserts before the ## Personal Notes section. If ## References already
+        exists, appends new wikilinks to it.
+
+        Args:
+            article_path: Path to the .md file to modify.
+            linked_articles: List of Article objects with obsidian_path set.
+        """
+        content = article_path.read_text(encoding="utf-8")
+
+        # Build wikilink entries from article titles
+        new_links = []
+        for a in linked_articles:
+            title = a.title or "Untitled"
+            new_links.append(f"[[{title}]]")
+
+        links_str = " ".join(new_links)
+
+        if "## References" in content:
+            # Append to existing References section
+            updated = content.replace(
+                "## References\n",
+                f"## References\n{links_str}\n",
+            )
+        else:
+            # Insert before ## Personal Notes
+            if "## Personal Notes" in content:
+                ref_section = f"## References\n\n{links_str}\n\n"
+                updated = content.replace(
+                    "## Personal Notes",
+                    f"{ref_section}## Personal Notes",
+                )
+            else:
+                # Append at end if no Personal Notes section
+                updated = content.rstrip() + f"\n\n## References\n\n{links_str}\n"
+
+        article_path.write_text(updated, encoding="utf-8")
+        logger.info(f"Appended {len(new_links)} references to {article_path.name}")
+
+    def append_referenced_by(self, article: Article, source_path: str) -> None:
+        """Add a referenced_by entry to the linked article's frontmatter.
+
+        Reads the article's .md file from its obsidian_path, adds or updates
+        the referenced_by field in YAML frontmatter, and writes back.
+
+        Args:
+            article: The linked Article (must have obsidian_path set).
+            source_path: Absolute path of the source article .md file.
+        """
+        if not article.obsidian_path:
+            logger.warning("Cannot append referenced_by: article has no obsidian_path")
+            return
+
+        target_path = self.vault_path / article.obsidian_path
+        if not target_path.exists():
+            logger.warning(f"Linked article file not found: {target_path}")
+            return
+
+        content = target_path.read_text(encoding="utf-8")
+
+        # Find frontmatter boundaries
+        lines = content.split("\n")
+        if not lines or lines[0].strip() != "---":
+            logger.warning(f"No frontmatter found in {target_path}")
+            return
+
+        fm_end = None
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                fm_end = i
+                break
+
+        if fm_end is None:
+            logger.warning(f"Malformed frontmatter in {target_path}")
+            return
+
+        # Parse existing frontmatter
+        fm_str = "\n".join(lines[1:fm_end])
+        try:
+            fm = yaml.safe_load(fm_str) or {}
+        except yaml.YAMLError:
+            logger.warning(f"Failed to parse frontmatter in {target_path}")
+            return
+
+        # Convert source absolute path to vault-relative path
+        try:
+            rel_source = str(Path(source_path).relative_to(self.vault_path))
+        except ValueError:
+            rel_source = source_path
+
+        # Add or append referenced_by
+        existing = fm.get("referenced_by", [])
+        if not isinstance(existing, list):
+            existing = [existing]
+        if rel_source not in existing:
+            existing.append(rel_source)
+        fm["referenced_by"] = existing
+
+        # Rebuild file
+        new_fm = yaml.dump(fm, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        new_lines = ["---", new_fm.strip(), "---"] + lines[fm_end + 1:]
+        target_path.write_text("\n".join(new_lines), encoding="utf-8")
+        logger.info(f"Appended referenced_by to {article.obsidian_path}")
