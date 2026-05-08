@@ -1,8 +1,8 @@
 # AI 个人知识库 V3
 
-AI 驱动的个人知识库流水线：RSS / Web URL → AI 处理 → Obsidian Vault
+AI 驱动的个人知识库流水线：RSS / Web URL / 飞书文档 → AI 处理 → Obsidian Vault
 
-自动从 RSS 订阅源或网页 URL 抓取文章，使用智谱 GLM 系列模型进行三级处理：GLM-4.7 筛选相关性并生成摘要，GLM-5.1 进行深度分析，最终输出格式美观的 Markdown 笔记到 Obsidian 知识库。
+自动从 RSS 订阅源、网页 URL 或飞书文档抓取文章，使用智谱 GLM 系列模型进行三级处理：GLM-4.7 筛选相关性并生成摘要，GLM-5.1 进行深度分析，最终输出格式美观的 Markdown 笔记到 Obsidian 知识库。
 
 ---
 
@@ -30,7 +30,7 @@ AI 驱动的个人知识库流水线：RSS / Web URL → AI 处理 → Obsidian 
 
 **流水线 5 个阶段：**
 
-1. **抓取 (Extract)** — 从 YAML 配置文件加载 RSS 订阅源或单个 URL，用 trafilatura 解析正文
+1. **抓取 (Extract)** — 从 YAML 配置文件加载 RSS 订阅源、单个 URL（trafilatura 解析）或飞书文档（开放平台 API）
 2. **去重 (Deduplicate)** — 基于 SQLite 的 URL/内容哈希去重，跳过已处理文章
 3. **L1 筛选 (Filter)** — GLM-4.7 评估相关性（1-10 分）、分配标签、检测语言
 4. **L2 摘要 (Summarize)** — GLM-4.7 生成 TL;DR、详细摘要、关键要点、关联主题（仅评分 ≥ 4 的文章）
@@ -95,6 +95,9 @@ python -m pipeline.main --source rss --config pipeline/configs/tech-feeds.yaml
 # 处理单个 URL
 python -m pipeline.main --source url --url "https://example.com/article"
 
+# 处理飞书文档
+python -m pipeline.main --source feishu --feishu-url "https://xxx.feishu.cn/wiki/DOCID"
+
 # 试运行（不调用 LLM、不写文件，仅抓取 + 去重）
 python -m pipeline.main --source rss --dry-run
 
@@ -115,8 +118,9 @@ python -m pipeline.main [选项]
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--source` | `rss` 或 `url` | `rss` | 内容来源类型 |
+| `--source` | `rss`、`url` 或 `feishu` | `rss` | 内容来源类型 |
 | `--url` | 字符串 | 无 | 要处理的单个 URL（使用 `--source url` 时必填） |
+| `--feishu-url` | 字符串 | 无 | 飞书文档 URL（使用 `--source feishu` 时必填） |
 | `--config` | 文件路径 | 无 | RSS 源配置文件（YAML 格式，不指定则使用内置默认源） |
 | `--dry-run` | 开关 | False | 仅抓取 + 去重，跳过 LLM 调用和文件写入 |
 | `--limit` | 整数 | 无 | 最多处理的文章数量 |
@@ -178,6 +182,8 @@ sources:
 | 变量 | 是否必填 | 说明 |
 |------|----------|------|
 | `ZHIPU_API_KEY` | 是 | 智谱 API 密钥，用于 LLM 调用 |
+| `FEISHU_APP_ID` | 飞书必填 | 飞书企业自建应用 App ID |
+| `FEISHU_APP_SECRET` | 飞书必填 | 飞书企业自建应用 App Secret |
 
 ---
 
@@ -224,6 +230,7 @@ vault/
 |----------|----------|
 | RSS | `南国微光/个人知识库/2-Articles/YYYY-MM-DD/` |
 | WEB_URL | `南国微光/个人知识库/2-Articles/YYYY-MM-DD/` |
+| FEISHU | `南国微光/个人知识库/2-Articles/YYYY-MM-DD/` |
 | GITHUB | `南国微光/个人知识库/3-GitHub/`（计划中） |
 | EMAIL | `南国微光/个人知识库/4-Newsletters/`（计划中） |
 | MANUAL | `南国微光/个人知识库/0-Inbox/` |
@@ -322,13 +329,14 @@ pytest pipeline/tests/ -v
 pytest pipeline/tests/test_l1_filter.py -v
 ```
 
-共 **58 个测试**，覆盖 9 个测试文件。所有外部依赖（feedparser、trafilatura、OpenAI API）均已 mock，无需网络连接。
+共 **77 个测试**，覆盖 10 个测试文件。所有外部依赖（feedparser、trafilatura、OpenAI API、飞书 API）均已 mock，无需网络连接。
 
 | 模块 | 测试数 | 覆盖范围 |
 |------|--------|----------|
-| main.py | 4 | CLI 流程、试运行、文章数量限制 |
+| main.py | 6 | CLI 流程、试运行、文章数量限制、飞书来源 |
 | rss_fetcher.py | 4 | 订阅源解析、正文提取 |
 | web_extractor.py | 3 | URL 提取、批量模式 |
+| feishu_extractor.py | 18 | URL 解析、Token 缓存、API 调用、文档提取、标题回退 |
 | dedup.py | 5 | 去重、URL 标准化、SQLite |
 | l1_filter.py | 4 | 相关性评分、阈值筛选、错误处理 |
 | l2_summarizer.py | 5 | 摘要生成、JSON 解析、错误处理 |
@@ -362,7 +370,8 @@ knowledge-base/
 │   ├── logs/                    ← 运行日志（pipeline_*.log）
 │   ├── extractors/              ← 内容抓取器
 │   │   ├── rss_fetcher.py       ← RSS 订阅源抓取 + 正文提取
-│   │   └── web_extractor.py     ← 单 URL 正文提取
+│   │   ├── web_extractor.py     ← 单 URL 正文提取
+│   │   └── feishu_extractor.py  ← 飞书文档提取（开放平台 API）
 │   ├── processors/              ← AI 处理器
 │   │   ├── l1_filter.py         ← L1 相关性评分（GLM-4.7）
 │   │   └── l2_summarizer.py     ← L2 摘要生成（GLM-4.7）
@@ -370,7 +379,7 @@ knowledge-base/
 │   │   └── obsidian_writer.py   ← Markdown 格式化 + 日期目录 + 评分分层
 │   ├── utils/                   ← 工具模块
 │   │   └── dedup.py             ← SQLite 去重存储
-│   └── tests/                   ← 58 个 pytest 测试
+│   └── tests/                   ← 77 个 pytest 测试
 ├── vault/                       ← Obsidian 知识库
 │   └── SouthTwilight-Obsidian/  ← Obsidian 仓库根目录
 │       ├── .obsidian/
@@ -392,7 +401,8 @@ knowledge-base/
 
 - [x] **Phase 1（M0+M1）** — 核心流水线：RSS/Web 抓取、去重、L1 筛选（GLM-4.7）、L2 摘要（GLM-4.7）、Obsidian 写入
 - [x] **Phase 1.5（增强）** — 评分分层内容深度、日期子目录、文件名评分前缀、YAML 配置文件支持
-- [ ] **Phase 2** — Hermes Cron 定时调度、GitHub 提取器、邮件提取器
+- [x] **Phase 2a（飞书提取器）** — 飞书文档提取：开放平台 API 鉴权、tenant_access_token 缓存、Markdown 原文提取
+- [ ] **Phase 2b** — Hermes Cron 定时调度、GitHub 提取器、邮件提取器
 - [ ] **Phase 3** — L3 深度分析（GLM-5.1）、主题聚类、MOC 自动生成
 
 ---

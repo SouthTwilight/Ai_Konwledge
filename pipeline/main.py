@@ -93,14 +93,16 @@ class Pipeline:
         self,
         source: str = "rss",
         url: Optional[str] = None,
+        feishu_url: Optional[str] = None,
         dry_run: bool = False,
         limit: Optional[int] = None,
     ) -> dict:
         """Execute the full pipeline.
 
         Args:
-            source: Content source type ("rss" or "url")
+            source: Content source type ("rss", "url", or "feishu")
             url: Single URL to process (for --source url)
+            feishu_url: Feishu document URL (for --source feishu)
             dry_run: If True, skip writing files and LLM calls
             limit: Max articles to process
 
@@ -123,7 +125,7 @@ class Pipeline:
         logger.info(f"Model config: L1={self.config.model.l1_model}, "
                      f"L2={self.config.model.l2_model}, "
                      f"api_base={self.config.model.api_base}")
-        articles = self._extract(source, url)
+        articles = self._extract(source, url, feishu_url)
         stats["fetched"] = len(articles)
 
         if limit:
@@ -178,7 +180,7 @@ class Pipeline:
         self.dedup.close()
         return stats
 
-    def _extract(self, source: str, url: Optional[str]) -> List[Article]:
+    def _extract(self, source: str, url: Optional[str], feishu_url: Optional[str] = None) -> List[Article]:
         """Extract articles from the specified source."""
         if source == "rss":
             logger.info(f"Fetching from {len(self.config.rss_sources)} RSS sources")
@@ -191,6 +193,14 @@ class Pipeline:
             article = extract_url(url)
             return [article] if article else []
 
+        elif source == "feishu":
+            if not feishu_url:
+                logger.error("--feishu-url required when --source feishu")
+                return []
+            from pipeline.extractors.feishu_extractor import extract_feishu_doc
+            article = extract_feishu_doc(feishu_url, self.config.feishu)
+            return [article] if article else []
+
         else:
             logger.error(f"Unknown source: {source}")
             return []
@@ -201,10 +211,14 @@ def main():
         description="Personal AI Knowledge Base Pipeline"
     )
     parser.add_argument(
-        "--source", choices=["rss", "url"], default="rss",
+        "--source", choices=["rss", "url", "feishu"], default="rss",
         help="Content source type"
     )
     parser.add_argument("--url", help="Single URL to process (with --source url)")
+    parser.add_argument(
+        "--feishu-url", type=str, default=None,
+        help="Feishu document URL (with --source feishu)"
+    )
     parser.add_argument(
         "--dry-run", action="store_true",
         help="Extract and dedup only, skip LLM calls and file writes"
@@ -227,6 +241,7 @@ def main():
     stats = pipeline.run(
         source=args.source,
         url=args.url,
+        feishu_url=args.feishu_url,
         dry_run=args.dry_run,
         limit=args.limit,
     )

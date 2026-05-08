@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 
 from pipeline.models import Article, ArticleSource, ProcessingLevel
-from pipeline.config import PipelineConfig, ModelConfig
+from pipeline.config import PipelineConfig, ModelConfig, FeishuConfig
 from pipeline.main import Pipeline
 
 
@@ -12,6 +12,7 @@ from pipeline.main import Pipeline
 def mock_config(tmp_path):
     return PipelineConfig(
         model=ModelConfig(api_key="test-key"),
+        feishu=FeishuConfig(app_id="test_app", app_secret="test_secret"),
         vault_path=tmp_path / "vault",
         dedup_db_path=":memory:",
         tier_discard_max=3,
@@ -93,3 +94,38 @@ class TestPipeline:
             stats = p.run(dry_run=True, limit=2)
 
         assert stats["new"] == 2  # Limited to 2
+
+    @patch("pipeline.main.L2Summarizer")
+    @patch("pipeline.main.L1Filter")
+    @patch("pipeline.extractors.feishu_extractor.FeishuClient.get_raw_content")
+    def test_feishu_source(self, mock_get_raw, mock_l1_cls, mock_l2_cls, mock_config):
+        mock_get_raw.return_value = "# Feishu Test Doc\n\nContent from Feishu."
+
+        article = Article(
+            url="https://test.feishu.cn/wiki/DOCID",
+            title="Feishu Test Doc",
+            source=ArticleSource.FEISHU,
+            content_raw="# Feishu Test Doc\n\nContent from Feishu.",
+            source_name="feishu",
+            relevance_score=8,
+            content_tier="detailed",
+            processing_level=ProcessingLevel.L1_FILTERED,
+            tags=["feishu"],
+        )
+
+        mock_l1 = MagicMock()
+        mock_l1.filter_batch.return_value = [article]
+        mock_l1_cls.return_value = mock_l1
+
+        mock_l2 = MagicMock()
+        article_l2 = article
+        article_l2.content_summary = "Feishu summary"
+        article_l2.processing_level = ProcessingLevel.L2_SUMMARIZED
+        mock_l2.summarize_batch.return_value = [article_l2]
+        mock_l2_cls.return_value = mock_l2
+
+        p = Pipeline(mock_config)
+        stats = p.run(source="feishu", feishu_url="https://test.feishu.cn/wiki/DOCID")
+
+        assert stats["fetched"] == 1
+        assert stats["written"] == 1

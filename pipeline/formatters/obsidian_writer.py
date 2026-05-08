@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 SOURCE_DIRS = {
     ArticleSource.RSS: "2-Articles",
     ArticleSource.WEB_URL: "2-Articles",
+    ArticleSource.FEISHU: "2-Articles",
     ArticleSource.GITHUB: "3-GitHub",
     ArticleSource.EMAIL: "4-Newsletters",
     ArticleSource.MANUAL: "0-Inbox",
