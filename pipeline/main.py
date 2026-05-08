@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from pipeline.config import PipelineConfig, load_config, load_rss_config, PIPELINE_DIR
+from pipeline.config import PipelineConfig, load_config, PIPELINE_DIR
 from pipeline.models import Article, ArticleSource
 from pipeline.extractors.rss_fetcher import fetch_all_rss
 from pipeline.extractors.web_extractor import extract_url
@@ -220,10 +220,9 @@ def main():
 
     log_path = setup_logging(args.log_level)
 
-    config = load_config()
+    config = load_config(args.config)
     if args.source == "rss":
-        config.rss_sources = load_rss_config(args.config)
-        logger.info(f"Loaded {len(config.rss_sources)} RSS source(s) for this run")
+        logger.info(f"Loaded {len(config.rss_sources)} RSS source(s) from config")
     pipeline = Pipeline(config)
     stats = pipeline.run(
         source=args.source,

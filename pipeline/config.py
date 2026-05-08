@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import yaml
 
@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PIPELINE_DIR = PROJECT_ROOT / 'pipeline'
 VAULT_DIR = PROJECT_ROOT / 'vault' / 'SouthTwilight-Obsidian' / '南国微光' / '个人知识库'
 DATA_DIR = PIPELINE_DIR / 'data'
+DEFAULT_CONFIG_PATH = PIPELINE_DIR / 'configs' / 'default.yaml'
 
 
 @dataclass
@@ -60,46 +61,20 @@ class PipelineConfig:
         # Load API key from env
         if not self.model.api_key:
             self.model.api_key = os.getenv('ZHIPU_API_KEY', '')
-        # Default RSS sources
-        if not self.rss_sources:
-            self.rss_sources = [
-                RSSSource(name="品玩", url="https://plink.anyfeeder.com/appinn", category="news", max_articles=10),
-                RSSSource(name="极客公园", url="http://www.geekpark.net/rss", category="ai", max_articles=10),
-                RSSSource(name="阮一峰的网络日志", url="http://feeds.feedburner.com/ruanyifeng", category="tech", max_articles=5),
-                RSSSource(name="少数派", url="https://sspai.com/feed", category="tech", max_articles=5),
-                RSSSource(name="贼拉正经的技术博客", url="https://stackoverflow.wiki/blog/rss.xml", category="tech", max_articles=5),
-                RSSSource(name="掮客酒馆", url="https://wechat2rss.xlab.app/feed/10fdc27bdac746197d79a7632053fee231f37bcd.xml", category="tech", max_articles=10),
-                RSSSource(name="未闻Code", url="https://wechat2rss.xlab.app/feed/a148ed0a542de4be305ffa1b93e8663ad252e22c.xml", category="tech", max_articles=10),
-                RSSSource(name="知乎日报", url="https://plink.anyfeeder.com/zhihu/daily", category="tech", max_articles=10),
-            ]
         # Ensure data dir exists
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_config() -> PipelineConfig:
-    return PipelineConfig()
-
-
-def load_rss_config(config_path: Optional[str] = None) -> List[RSSSource]:
-    """Load RSS sources from a YAML config file."""
-    if config_path is None:
-        config_path = str(PIPELINE_DIR / 'configs' / 'default.yaml')
-
-    path = Path(config_path)
-    if not path.is_absolute():
-        path = PIPELINE_DIR / 'configs' / path.name
-
-    if not path.exists():
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"Config file not found: {path}, using hardcoded defaults")
-        return _default_rss_sources()
-
+def _load_rss_sources_from_yaml(path: Path) -> List[RSSSource]:
+    """Parse a YAML file into a list of RSSSource objects."""
     with open(path, 'r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
 
+    if not data or 'sources' not in data:
+        return []
+
     sources = []
-    for item in data.get('sources', []):
+    for item in data['sources']:
         sources.append(RSSSource(
             name=item['name'],
             url=item['url'],
@@ -110,15 +85,32 @@ def load_rss_config(config_path: Optional[str] = None) -> List[RSSSource]:
     return sources
 
 
-def _default_rss_sources() -> List[RSSSource]:
-    """Hardcoded default sources — fallback when no config file found."""
-    return [
-        RSSSource(name="品玩", url="https://plink.anyfeeder.com/appinn", category="news", max_articles=10),
-        RSSSource(name="极客公园", url="http://www.geekpark.net/rss", category="ai", max_articles=10),
-        RSSSource(name="阮一峰的网络日志", url="http://feeds.feedburner.com/ruanyifeng", category="tech", max_articles=5),
-        RSSSource(name="少数派", url="https://sspai.com/feed", category="tech", max_articles=5),
-        RSSSource(name="贼拉正经的技术博客", url="https://stackoverflow.wiki/blog/rss.xml", category="tech", max_articles=5),
-        RSSSource(name="掮客酒馆", url="https://wechat2rss.xlab.app/feed/10fdc27bdac746197d79a7632053fee231f37bcd.xml", category="tech", max_articles=10),
-        RSSSource(name="未闻Code", url="https://wechat2rss.xlab.app/feed/a148ed0a542de4be305ffa1b93e8663ad252e22c.xml", category="tech", max_articles=10),
-        RSSSource(name="知乎日报", url="https://plink.anyfeeder.com/zhihu/daily", category="tech", max_articles=10),
-    ]
+def load_config(config_path: Optional[str] = None) -> PipelineConfig:
+    """Load pipeline config, with RSS sources from a YAML config file.
+
+    Args:
+        config_path: Path to YAML config file. Defaults to pipeline/configs/default.yaml.
+                     If the file doesn't exist, RSS sources will be empty.
+
+    Returns:
+        Fully configured PipelineConfig instance.
+    """
+    # Resolve config file path
+    if config_path is None:
+        path = DEFAULT_CONFIG_PATH
+    else:
+        path = Path(config_path)
+        if not path.is_absolute():
+            path = PIPELINE_DIR / 'configs' / path.name
+
+    # Load RSS sources from YAML
+    rss_sources: List[RSSSource] = []
+    if path.exists():
+        rss_sources = _load_rss_sources_from_yaml(path)
+    else:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Config file not found: {path}, no RSS sources loaded"
+        )
+
+    return PipelineConfig(rss_sources=rss_sources)
