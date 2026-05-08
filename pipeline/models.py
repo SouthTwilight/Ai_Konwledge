@@ -51,6 +51,9 @@ class Article:
     
     content_hash: str = ""
     obsidian_path: str = ""
+
+    linked_urls: List[str] = field(default_factory=list)
+    referenced_by: List[str] = field(default_factory=list)
     
     def compute_hash(self) -> str:
         import hashlib
