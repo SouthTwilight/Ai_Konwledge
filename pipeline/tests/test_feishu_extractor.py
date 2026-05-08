@@ -138,6 +138,56 @@ class TestFeishuClient:
                 content = client.get_raw_content("INVALID_ID")
                 assert content is None
 
+    def test_get_document_info_success(self):
+        from pipeline.extractors.feishu_extractor import FeishuClient
+        config = FeishuConfig(app_id="test_app", app_secret="test_secret")
+
+        client = FeishuClient(config)
+        with patch.object(client, '_get_token', return_value='t-xxx'):
+            with patch('httpx.Client') as mock_client_cls:
+                mock_response = MagicMock()
+                mock_response.json.return_value = {
+                    "code": 0,
+                    "data": {
+                        "document": {
+                            "document_id": "DOCID123",
+                            "title": "My Real Title from API",
+                            "revision_id": 42,
+                        },
+                    },
+                    "msg": "success",
+                }
+                mock_response.raise_for_status.return_value = None
+                mock_client = MagicMock()
+                mock_client.get.return_value = mock_response
+                mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+                mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+                info = client.get_document_info("DOCID123")
+                assert info is not None
+                assert info["title"] == "My Real Title from API"
+
+    def test_get_document_info_api_error(self):
+        from pipeline.extractors.feishu_extractor import FeishuClient
+        config = FeishuConfig(app_id="test_app", app_secret="test_secret")
+
+        client = FeishuClient(config)
+        with patch.object(client, '_get_token', return_value='t-xxx'):
+            with patch('httpx.Client') as mock_client_cls:
+                mock_response = MagicMock()
+                mock_response.json.return_value = {
+                    "code": 99991668,
+                    "msg": "document not found",
+                }
+                mock_response.raise_for_status.return_value = None
+                mock_client = MagicMock()
+                mock_client.get.return_value = mock_response
+                mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
+                mock_client_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+                info = client.get_document_info("INVALID_ID")
+                assert info is None
+
 
 # ============================================================
 # extract_feishu_doc Integration Tests
@@ -153,6 +203,9 @@ class TestExtractFeishuDoc:
         with patch(
             'pipeline.extractors.feishu_extractor.FeishuClient.get_raw_content',
             return_value="# Test Doc\n\nContent here."
+        ), patch(
+            'pipeline.extractors.feishu_extractor.FeishuClient.get_document_info',
+            return_value={"title": "Test Doc", "document_id": "DOCID123"}
         ):
             article = extract_feishu_doc(
                 "https://test.feishu.cn/wiki/DOCID123", config
@@ -189,33 +242,60 @@ class TestExtractFeishuDoc:
         with patch(
             'pipeline.extractors.feishu_extractor.FeishuClient.get_raw_content',
             return_value="# Title\nBody text."
+        ), patch(
+            'pipeline.extractors.feishu_extractor.FeishuClient.get_document_info',
+            return_value={"title": "Title", "document_id": "DOCID123"}
         ):
             article = extract_feishu_doc(url, config)
             assert article.url == url
 
-    def test_extract_title_from_first_heading(self):
+    def test_extract_title_from_api_metadata(self):
+        """API title takes priority over content heading."""
         from pipeline.extractors.feishu_extractor import extract_feishu_doc
         config = FeishuConfig(app_id="test", app_secret="secret")
 
         with patch(
             'pipeline.extractors.feishu_extractor.FeishuClient.get_raw_content',
-            return_value="# My Document Title\n\nSome content here."
+            return_value="Some content without heading."
+        ), patch(
+            'pipeline.extractors.feishu_extractor.FeishuClient.get_document_info',
+            return_value={"title": "API Title", "document_id": "ABC"}
         ):
             article = extract_feishu_doc(
                 "https://test.feishu.cn/wiki/ABC", config
             )
-            assert article.title == "My Document Title"
+            assert article.title == "API Title"
 
-    def test_extract_fallback_title_when_no_heading(self):
+    def test_extract_title_fallback_to_content_heading(self):
+        """If API returns no title, fall back to first Markdown heading."""
+        from pipeline.extractors.feishu_extractor import extract_feishu_doc
+        config = FeishuConfig(app_id="test", app_secret="secret")
+
+        with patch(
+            'pipeline.extractors.feishu_extractor.FeishuClient.get_raw_content',
+            return_value="# Heading Title\n\nSome content here."
+        ), patch(
+            'pipeline.extractors.feishu_extractor.FeishuClient.get_document_info',
+            return_value=None
+        ):
+            article = extract_feishu_doc(
+                "https://test.feishu.cn/wiki/ABC", config
+            )
+            assert article.title == "Heading Title"
+
+    def test_extract_fallback_title_when_no_api_and_no_heading(self):
+        """If API fails and no heading in content, fall back to doc_id."""
         from pipeline.extractors.feishu_extractor import extract_feishu_doc
         config = FeishuConfig(app_id="test", app_secret="secret")
 
         with patch(
             'pipeline.extractors.feishu_extractor.FeishuClient.get_raw_content',
             return_value="Just plain text without any heading."
+        ), patch(
+            'pipeline.extractors.feishu_extractor.FeishuClient.get_document_info',
+            return_value=None
         ):
             article = extract_feishu_doc(
                 "https://test.feishu.cn/wiki/ABC", config
             )
-            # Should use doc_id as fallback title
             assert article.title == "ABC"

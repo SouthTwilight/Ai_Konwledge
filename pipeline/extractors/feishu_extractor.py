@@ -117,6 +117,35 @@ class FeishuClient:
             logger.warning("Feishu doc %s: empty content returned", document_id)
         return content
 
+    def get_document_info(self, document_id: str) -> Optional[dict]:
+        """Fetch document metadata (title, revision_id, etc.).
+
+        Uses the /docx/v1/documents/{id} endpoint.
+
+        Returns a dict with at least {"title": str} on success,
+        or None on failure.
+        """
+        token = self._get_token()
+        url = f"{FEISHU_API_BASE}/docx/v1/documents/{document_id}"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+
+        if data.get("code") != 0:
+            logger.error(
+                "Feishu doc info API error for %s: code=%s msg=%s",
+                document_id, data.get("code"), data.get("msg"),
+            )
+            return None
+
+        doc = data.get("data", {}).get("document")
+        if not doc:
+            return None
+        return doc
+
 
 # ============================================================
 # Top-level extractor function
@@ -126,6 +155,30 @@ def _extract_title_from_markdown(md_text: str, doc_id: str) -> str:
     """Extract title from the first Markdown heading, or fallback to doc_id."""
     match = re.match(r'^#\s+(.+)$', md_text, re.MULTILINE)
     return match.group(1).strip() if match else doc_id
+
+
+def _resolve_title(client: "FeishuClient", doc_id: str, content: str) -> str:
+    """Resolve document title with three-level priority:
+
+    1. API metadata title (most reliable)
+    2. First Markdown heading in content
+    3. doc_id as last resort
+    """
+    # Priority 1: API metadata
+    try:
+        info = client.get_document_info(doc_id)
+        if info and info.get("title"):
+            return info["title"]
+    except Exception as e:
+        logger.warning("Feishu get_document_info failed for %s: %s", doc_id, e)
+
+    # Priority 2: First Markdown heading
+    match = re.match(r'^#\s+(.+)$', content, re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+
+    # Priority 3: doc_id
+    return doc_id
 
 
 def extract_feishu_doc(url: str, config: FeishuConfig) -> Optional[Article]:
@@ -153,7 +206,7 @@ def extract_feishu_doc(url: str, config: FeishuConfig) -> Optional[Article]:
     if not content:
         return None
 
-    title = _extract_title_from_markdown(content, doc_id)
+    title = _resolve_title(client, doc_id, content)
 
     article = Article(
         url=url,
