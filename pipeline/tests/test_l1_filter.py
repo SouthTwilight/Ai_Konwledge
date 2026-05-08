@@ -81,14 +81,20 @@ class TestL1Filter:
             for i in range(5)
         ]
 
-        # Scores: 9, 7, 5, 3, 1  → threshold=6 keeps first 2
+        # Scores: 9, 7, 5, 3, 1  → discard<=3, compressed<=6 keeps 9,7,5
         scores = [9, 7, 5, 3, 1]
         responses = [_mock_response(s, ["ai"]) for s in scores]
         mock_client.chat.completions.create.side_effect = responses
 
         f.client = mock_client
-        results = f.filter_batch(articles, threshold=6)
-        assert len(results) == 2
+
+        mock_config = MagicMock()
+        mock_config.tier_discard_max = 3
+        mock_config.tier_compressed_max = 6
+        results = f.filter_batch(articles, config=mock_config)
+        assert len(results) == 3  # scores 9(detailed), 7(detailed), 5(compressed) pass
+        tiers = [a.content_tier for a in results]
+        assert tiers == ["detailed", "detailed", "compressed"]
 
     @patch("pipeline.processors.l1_filter.OpenAI")
     def test_api_error_passes_through(self, mock_openai_cls, sample_article, l1_filter):

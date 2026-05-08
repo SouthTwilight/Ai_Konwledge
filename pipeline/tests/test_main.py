@@ -14,7 +14,8 @@ def mock_config(tmp_path):
         model=ModelConfig(api_key="test-key"),
         vault_path=tmp_path / "vault",
         dedup_db_path=":memory:",
-        relevance_threshold=6,
+        tier_discard_max=3,
+        tier_compressed_max=6,
         rss_sources=[],
     )
 
@@ -28,6 +29,7 @@ def sample_articles():
             source=ArticleSource.RSS,
             content_raw=f"This is test article {i} about AI and machine learning. " * 20,
             source_name="TestFeed",
+            content_tier="compressed",
         )
         for i in range(3)
     ]
@@ -41,6 +43,7 @@ class TestPipeline:
     def test_url_source(self, mock_extract, mock_l1_cls, mock_l2_cls, mock_config, sample_articles):
         article = sample_articles[0]
         article.relevance_score = 9
+        article.content_tier = "detailed"
         article.tags = ["ai"]
         article.processing_level = ProcessingLevel.L1_FILTERED
         mock_extract.return_value = article

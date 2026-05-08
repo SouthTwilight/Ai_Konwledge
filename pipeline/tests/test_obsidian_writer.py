@@ -24,6 +24,7 @@ def processed_article():
         related_topics=["LLM", "OpenAI"],
         processing_level=ProcessingLevel.L2_SUMMARIZED,
         content_hash="abc123",
+        content_tier="compressed",
     )
 
 
@@ -118,3 +119,38 @@ class TestObsidianWriter:
         # Should not create any files
         written_files = list(writer.vault_path.rglob("*.md"))
         assert len(written_files) == 0
+
+    def test_date_subfolder_in_path(self, writer, processed_article):
+        """Articles should be written under a YYYY-MM-DD date subfolder."""
+        path = writer.write_article(processed_article)
+        parts = Path(str(path)).parts
+        assert "2-Articles" in parts
+        # Find date part (YYYY-MM-DD format)
+        date_parts = [p for p in parts if len(p) == 10 and p[4] == '-' and p[7] == '-']
+        assert len(date_parts) >= 1, f"Expected date folder like 2026-05-08 in {path}"
+
+    def test_detailed_article_has_raw_content_section(self, writer, processed_article):
+        processed_article.content_tier = "detailed"
+        _, content = writer.format_article(processed_article)
+        assert "## 原文内容" in content
+
+    def test_compressed_article_no_raw_content_section(self, writer, processed_article):
+        processed_article.content_tier = "compressed"
+        _, content = writer.format_article(processed_article)
+        assert "## 原文内容" not in content
+
+    def test_filename_has_score_prefix(self, writer, processed_article):
+        filename, _ = writer.format_article(processed_article)
+        assert filename.startswith("[S"), f"Expected score prefix like [S9], got: {filename}"
+        assert f"[S{processed_article.relevance_score}]" in filename
+
+    def test_filename_no_score_when_zero(self, writer):
+        article = Article(
+            url="https://example.com/test",
+            title="Test Article",
+            source=ArticleSource.RSS,
+            relevance_score=0,
+            content_tier="compressed",
+        )
+        filename, _ = writer.format_article(article)
+        assert not filename.startswith("[S"), f"Zero score should have no prefix, got: {filename}"

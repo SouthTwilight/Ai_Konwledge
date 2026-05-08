@@ -43,6 +43,7 @@ class Article:
     
     processing_level: ProcessingLevel = ProcessingLevel.RAW
     relevance_score: int = 0
+    content_tier: str = ""  # "discard", "compressed", or "detailed"
     tags: List[str] = field(default_factory=list)
     key_points: List[str] = field(default_factory=list)
     related_topics: List[str] = field(default_factory=list)

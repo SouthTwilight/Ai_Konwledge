@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 from pipeline.models import Article, ArticleSource, ProcessingLevel
 from pipeline.config import ModelConfig
-from pipeline.processors.l2_summarizer import L2Summarizer
+from pipeline.processors.l2_summarizer import L2Summarizer, _extract_json
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def l1_article():
         relevance_score=9,
         tags=["ai", "llm"],
         processing_level=ProcessingLevel.L1_FILTERED,
+        content_tier="compressed",
     )
 
 
@@ -41,6 +42,8 @@ def _mock_summary_response(tldr, summary, key_points, related_topics):
         "key_points": key_points,
         "related_topics": related_topics,
     })
+    # No reasoning_content for normal response
+    mock_resp.choices[0].message.reasoning_content = None
     return mock_resp
 
 
@@ -55,6 +58,7 @@ def _mock_think_response(tldr, summary, key_points, related_topics):
         "related_topics": related_topics,
     })
     mock_resp.choices[0].message.content = f"<think\nLet me analyze this...\nThe key points are...\n</think\n{body}"
+    mock_resp.choices[0].message.reasoning_content = None
     return mock_resp
 
 
@@ -108,10 +112,10 @@ class TestL2Summarizer:
 
     def test_extract_json_pure(self):
         text = '{"tldr": "test", "summary": "hello"}'
-        assert L2Summarizer._extract_json(text) == text
+        assert _extract_json(text) == text
 
     def test_extract_json_with_think_block(self):
         text = '<think\nreasoning here\n</think\n{"tldr": "test"}'
-        result = L2Summarizer._extract_json(text)
+        result = _extract_json(text)
         parsed = json.loads(result)
         assert parsed["tldr"] == "test"

@@ -1,0 +1,34 @@
+name: default
+sources:
+  - name: 品玩
+    url: https://plink.anyfeeder.com/appinn
+    category: news
+    max_articles: 10
+  - name: 极客公园
+    url: http://www.geekpark.net/rss
+    category: ai
+    max_articles: 10
+  - name: 阮一峰的网络日志
+    url: http://feeds.feedburner.com/ruanyifeng
+    category: tech
+    max_articles: 5
+  - name: 少数派
+    url: https://sspai.com/feed
+    category: tech
+    max_articles: 5
+  - name: 贼拉正经的技术博客
+    url: https://stackoverflow.wiki/blog/rss.xml
+    category: tech
+    max_articles: 5
+  - name: 掮客酒馆
+    url: https://wechat2rss.xlab.app/feed/10fdc27bdac746197d79a7632053fee231f37bcd.xml
+    category: tech
+    max_articles: 10
+  - name: 未闻Code
+    url: https://wechat2rss.xlab.app/feed/a148ed0a542de4be305ffa1b93e8663ad252e22c.xml
+    category: tech
+    max_articles: 10
+  - name: 知乎日报
+    url: https://plink.anyfeeder.com/zhihu/daily
+    category: tech
+    max_articles: 10

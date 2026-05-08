@@ -43,9 +43,10 @@ class ObsidianWriter:
         self.vault_path = Path(vault_path)
 
     def _get_target_dir(self, article: Article) -> Path:
-        """Determine the target subdirectory based on article source."""
+        """Determine the target subdirectory based on article source + date."""
         subdir = SOURCE_DIRS.get(article.source, "0-Inbox")
-        return self.vault_path / subdir
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        return self.vault_path / subdir / date_str
 
     def _build_frontmatter(self, article: Article) -> str:
         """Build YAML frontmatter for the article."""
@@ -105,10 +106,13 @@ class ObsidianWriter:
             parts.append("## Tags\n")
             parts.append(" ".join(f"#{t}" for t in article.tags) + "\n")
 
-        # Raw content reference
-        if article.content_raw:
+        # Raw content section — tier-dependent
+        if article.content_tier == "detailed" and article.content_raw:
+            parts.append("## 原文内容\n")
+            parts.append(article.content_raw + "\n")
+        elif article.content_raw:
             word_count = len(article.content_raw.split())
-            parts.append(f"\n---\n*Original: {word_count} words*\n")
+            parts.append(f"\n---\n*原文: {word_count} words*\n")
 
         # Personal notes placeholder
         parts.append("\n## Personal Notes\n")
@@ -124,7 +128,8 @@ class ObsidianWriter:
         frontmatter = self._build_frontmatter(article)
         body = self._build_body(article)
 
-        filename = _slugify(article.title) + ".md"
+        score_prefix = f"[S{article.relevance_score}] " if article.relevance_score > 0 else ""
+        filename = f"{score_prefix}{_slugify(article.title)}.md"
         content = f"---\n{frontmatter}---\n{body}"
 
         return filename, content

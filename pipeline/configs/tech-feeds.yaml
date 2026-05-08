@@ -1,0 +1,14 @@
+name: tech-feeds
+sources:
+  - name: 阮一峰的网络日志
+    url: http://feeds.feedburner.com/ruanyifeng
+    category: tech
+    max_articles: 5
+  - name: 贼拉正经的技术博客
+    url: https://stackoverflow.wiki/blog/rss.xml
+    category: tech
+    max_articles: 5
+  - name: 未闻Code
+    url: https://wechat2rss.xlab.app/feed/a148ed0a542de4be305ffa1b93e8663ad252e22c.xml
+    category: tech
+    max_articles: 10

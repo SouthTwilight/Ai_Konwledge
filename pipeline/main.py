@@ -10,10 +10,11 @@ import argparse
 import logging
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from pipeline.config import PipelineConfig, load_config
+from pipeline.config import PipelineConfig, load_config, load_rss_config, PIPELINE_DIR
 from pipeline.models import Article, ArticleSource
 from pipeline.extractors.rss_fetcher import fetch_all_rss
 from pipeline.extractors.web_extractor import extract_url
@@ -24,14 +25,58 @@ from pipeline.formatters.obsidian_writer import ObsidianWriter
 
 logger = logging.getLogger("pipeline")
 
+# Logs directory
+LOGS_DIR = PIPELINE_DIR / 'logs'
+
 
 def setup_logging(level: str = "INFO"):
-    """Configure logging for the pipeline."""
-    logging.basicConfig(
-        level=getattr(logging, level.upper()),
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    """Configure logging with both console and file output."""
+    log_level = getattr(logging, level.upper(), logging.INFO)
+
+    # Root logger config
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Clear existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+
+    formatter = logging.Formatter(
+        "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+
+    # File handler — always DEBUG level for complete log capture
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_filename = datetime.now().strftime("pipeline_%Y%m%d_%H%M%S.log")
+    log_path = LOGS_DIR / log_filename
+
+    file_handler = logging.FileHandler(log_path, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    root_logger.addHandler(file_handler)
+
+    # Also create a 'latest' symlink / copy for easy access
+    latest_path = LOGS_DIR / 'pipeline_latest.log'
+    try:
+        if latest_path.exists() or latest_path.is_symlink():
+            latest_path.unlink()
+        latest_path.symlink_to(log_path)
+    except OSError:
+        # Windows/some FS may not support symlinks — just copy
+        import shutil
+        shutil.copy2(log_path, latest_path)
+
+    logger.info(f"Log file: {log_path}")
+    return log_path
 
 
 class Pipeline:
@@ -75,11 +120,15 @@ class Pipeline:
 
         # Step 1: Extract
         logger.info(f"=== Pipeline start: source={source} dry_run={dry_run} ===")
+        logger.info(f"Model config: L1={self.config.model.l1_model}, "
+                     f"L2={self.config.model.l2_model}, "
+                     f"api_base={self.config.model.api_base}")
         articles = self._extract(source, url)
         stats["fetched"] = len(articles)
 
         if limit:
             articles = articles[:limit]
+            logger.info(f"Limited to {limit} articles")
 
         # Step 2: Deduplicate
         articles = self.dedup.filter_new(articles)
@@ -98,7 +147,9 @@ class Pipeline:
             return stats
 
         # Step 3: L1 Filter
-        articles = self.l1.filter_batch(articles, threshold=self.config.relevance_threshold)
+        logger.info(f"Starting L1 filter on {len(articles)} articles "
+                     f"(discard<={self.config.tier_discard_max}, compressed<={self.config.tier_compressed_max})")
+        articles = self.l1.filter_batch(articles, config=self.config)
         stats["l1_passed"] = len(articles)
 
         if not articles:
@@ -107,18 +158,20 @@ class Pipeline:
             return stats
 
         # Step 4: L2 Summarize
+        logger.info(f"Starting L2 summarization on {len(articles)} articles")
         articles = self.l2.summarize_batch(articles)
         stats["l2_summarized"] = len(articles)
 
         # Step 5: Write to Obsidian
+        logger.info(f"Writing {len(articles)} articles to Obsidian vault")
         paths = self.writer.write_batch(articles)
         stats["written"] = len(paths)
 
         elapsed = time.time() - start_time
         logger.info(
             f"=== Pipeline complete in {elapsed:.1f}s: "
-            f"{stats['fetched']} fetched → {stats['new']} new → "
-            f"{stats['l1_passed']} L1 passed → {stats['l2_summarized']} L2 → "
+            f"{stats['fetched']} fetched -> {stats['new']} new -> "
+            f"{stats['l1_passed']} L1 passed -> {stats['l2_summarized']} L2 -> "
             f"{stats['written']} written ==="
         )
 
@@ -157,13 +210,20 @@ def main():
         help="Extract and dedup only, skip LLM calls and file writes"
     )
     parser.add_argument("--limit", type=int, help="Max articles to process")
+    parser.add_argument(
+        "--config", type=str, default=None,
+        help="YAML config file for RSS sources (default: pipeline/configs/default.yaml)"
+    )
     parser.add_argument("--log-level", default="INFO", help="Logging level")
 
     args = parser.parse_args()
 
-    setup_logging(args.log_level)
+    log_path = setup_logging(args.log_level)
 
     config = load_config()
+    if args.source == "rss":
+        config.rss_sources = load_rss_config(args.config)
+        logger.info(f"Loaded {len(config.rss_sources)} RSS source(s) for this run")
     pipeline = Pipeline(config)
     stats = pipeline.run(
         source=args.source,
@@ -177,6 +237,7 @@ def main():
     print(f"Pipeline Summary:")
     for k, v in stats.items():
         print(f"  {k}: {v}")
+    print(f"  Log: {log_path}")
     print(f"{'='*50}\n")
 
     sys.exit(0 if stats["errors"] == 0 else 1)
