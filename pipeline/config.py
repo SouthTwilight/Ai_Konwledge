@@ -45,9 +45,16 @@ class ModelConfig:
 
 
 @dataclass
+class FeishuConfig:
+    app_id: str = ""
+    app_secret: str = ""
+
+
+@dataclass
 class PipelineConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     rss_sources: List[RSSSource] = field(default_factory=list)
+    feishu: FeishuConfig = field(default_factory=FeishuConfig)
     vault_path: Path = VAULT_DIR
     # Tier thresholds for score-tiered content depth
     tier_discard_max: int = 3      # Scores 1-3: discarded entirely
@@ -61,6 +68,11 @@ class PipelineConfig:
         # Load API key from env
         if not self.model.api_key:
             self.model.api_key = os.getenv('ZHIPU_API_KEY', '')
+        # Load Feishu credentials from env
+        if not self.feishu.app_id:
+            self.feishu.app_id = os.getenv('FEISHU_APP_ID', '')
+        if not self.feishu.app_secret:
+            self.feishu.app_secret = os.getenv('FEISHU_APP_SECRET', '')
         # Ensure data dir exists
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
