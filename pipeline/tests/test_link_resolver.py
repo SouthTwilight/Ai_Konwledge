@@ -105,3 +105,127 @@ def test_filter_excludes_bare_domain():
     links = [("bare", "https://twitter.com")]
     result = filter_links(links, SOURCE_URL)
     assert result == []
+
+
+# --- _strip_frontmatter tests ---
+
+from pipeline.processors.link_resolver import _strip_frontmatter, _read_frontmatter_source
+
+
+def test_strip_frontmatter_removes_yaml():
+    content = "---\ntitle: Test\nsource: https://x.com\n---\n# Body\n\nText here.\n"
+    body = _strip_frontmatter(content)
+    assert body.startswith("# Body")
+    assert "title" not in body
+
+
+def test_strip_frontmatter_no_frontmatter():
+    content = "# Just a heading\n\nNo frontmatter here.\n"
+    body = _strip_frontmatter(content)
+    assert body == content
+
+
+def test_read_frontmatter_source_extracts_url():
+    content = "---\ntitle: Test\nsource: https://example.com/a\ntags: [ai]\n---\n# Body\n"
+    url = _read_frontmatter_source(content)
+    assert url == "https://example.com/a"
+
+
+def test_read_frontmatter_source_empty_on_no_fm():
+    content = "# No frontmatter\n"
+    url = _read_frontmatter_source(content)
+    assert url == ""
+
+
+# --- resolve_linked_articles tests (mocked) ---
+
+from unittest.mock import patch, MagicMock
+from pipeline.processors.link_resolver import resolve_linked_articles
+from pipeline.models import Article, ArticleSource
+import tempfile, os
+from pathlib import Path
+
+
+def _make_mock_pipeline():
+    """Create a mock Pipeline with all dependencies."""
+    pipeline = MagicMock()
+    pipeline.config = MagicMock()
+    pipeline.config.tier_discard_max = 3
+    pipeline.config.tier_compressed_max = 6
+    pipeline.dedup = MagicMock()
+    pipeline.dedup.filter_new = lambda articles: articles
+    pipeline.l1 = MagicMock()
+    pipeline.l1.filter_article = lambda a: a
+    pipeline.l1._assign_tier = lambda s, d, c: "detailed" if s > c else "compressed" if s > d else "discard"
+    pipeline.l2 = MagicMock()
+    pipeline.l2.summarize_batch = lambda articles: articles
+    pipeline.writer = MagicMock()
+    pipeline.writer.write_article = MagicMock(return_value=Path("/tmp/ref.md"))
+    pipeline.writer.append_references = MagicMock()
+    pipeline.writer.append_referenced_by = MagicMock()
+    return pipeline
+
+
+@patch("pipeline.extractors.web_extractor.extract_url")
+def test_resolve_no_links_in_body(mock_extract):
+    """Article with no links returns zero stats."""
+    content = "---\ntitle: Test\nsource: https://mysite.com/a\n---\n# Test\n\nPlain text.\n\n## Personal Notes\n"
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+        f.write(content)
+        tmp = f.name
+    try:
+        pipeline = _make_mock_pipeline()
+        stats = resolve_linked_articles(tmp, pipeline, max_links=5)
+        assert stats["links_found"] == 0
+        assert stats["fetched"] == 0
+        mock_extract.assert_not_called()
+    finally:
+        os.unlink(tmp)
+
+
+@patch("pipeline.extractors.web_extractor.extract_url")
+def test_resolve_filters_same_domain_links(mock_extract):
+    """Same-domain links are excluded, nothing fetched."""
+    content = "---\ntitle: Test\nsource: https://mysite.com/a\n---\n# Test\n\nSee [ref](https://mysite.com/other).\n\n## Personal Notes\n"
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+        f.write(content)
+        tmp = f.name
+    try:
+        pipeline = _make_mock_pipeline()
+        stats = resolve_linked_articles(tmp, pipeline, max_links=5)
+        assert stats["links_found"] == 1
+        assert stats["links_filtered_out"] == 1
+        assert stats["fetched"] == 0
+        mock_extract.assert_not_called()
+    finally:
+        os.unlink(tmp)
+
+
+@patch("pipeline.extractors.web_extractor.extract_url")
+def test_resolve_success_flow(mock_extract):
+    """Full flow: one valid external link -> fetch -> write -> backlink."""
+    ref_article = Article(
+        url="https://other.com/article",
+        title="Referenced Article",
+        source=ArticleSource.WEB_URL,
+        content_raw="Ref content",
+        source_name="link-reference",
+    )
+    ref_article.relevance_score = 8
+    ref_article.compute_hash()
+    mock_extract.return_value = ref_article
+
+    content = "---\ntitle: Test\nsource: https://mysite.com/a\n---\n# Test\n\nSee [ref](https://other.com/article).\n\n## Personal Notes\n"
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as f:
+        f.write(content)
+        tmp = f.name
+    try:
+        pipeline = _make_mock_pipeline()
+        stats = resolve_linked_articles(tmp, pipeline, max_links=5)
+        assert stats["links_found"] == 1
+        assert stats["fetched"] == 1
+        assert stats["written"] == 1
+        pipeline.writer.append_references.assert_called_once()
+        pipeline.writer.append_referenced_by.assert_called_once()
+    finally:
+        os.unlink(tmp)
