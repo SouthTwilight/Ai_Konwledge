@@ -319,12 +319,14 @@ def extract_feishu_doc(url: str, config: FeishuConfig) -> Optional[Article]:
 
     # Enrich content with hyperlinks from the Blocks API.
     # raw_content loses links; blocks API preserves them.
+    block_links = []
     try:
         blocks = client.get_blocks(doc_id)
-        links = extract_links_from_blocks(blocks)
-        if links:
-            logger.info("Feishu doc %s: injecting %d hyperlinks from blocks", doc_id, len(links))
-            content = inject_links_into_markdown(content, links)
+        block_links = extract_links_from_blocks(blocks)
+        if block_links:
+            logger.info("Feishu doc %s: found %d hyperlinks from blocks", doc_id, len(block_links))
+            # Inject links into content for LLM context
+            content = inject_links_into_markdown(content, block_links)
     except Exception as e:
         logger.warning("Feishu block enrichment failed for %s (non-fatal): %s", doc_id, e)
 
@@ -336,6 +338,7 @@ def extract_feishu_doc(url: str, config: FeishuConfig) -> Optional[Article]:
         source=ArticleSource.FEISHU,
         content_raw=content,
         source_name="feishu",
+        linked_urls=[url for _, url in block_links],
     )
     logger.info("Extracted Feishu doc: %s (%d chars)", title, len(content))
     return article

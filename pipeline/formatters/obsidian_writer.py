@@ -66,6 +66,9 @@ class ObsidianWriter:
             "level": article.processing_level.value,
             "hash": article.content_hash,
         }
+        # Include linked_urls if present (from Feishu blocks API etc.)
+        if article.linked_urls:
+            fm["linked_urls"] = article.linked_urls
         # Remove None values
         fm = {k: v for k, v in fm.items() if v is not None}
 

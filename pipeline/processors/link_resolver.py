@@ -123,6 +123,24 @@ def _read_frontmatter_source(content: str) -> str:
     return ""
 
 
+def _read_frontmatter_linked_urls(content: str) -> list:
+    """Extract 'linked_urls' list from YAML frontmatter, or empty list."""
+    import yaml as _yaml
+    lines = content.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return []
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            fm_str = "\n".join(lines[1:i])
+            try:
+                fm = _yaml.safe_load(fm_str)
+                urls = fm.get("linked_urls", []) if isinstance(fm, dict) else []
+                return urls if isinstance(urls, list) else []
+            except Exception:
+                return []
+    return []
+
+
 def resolve_linked_articles(
     article_path: str,
     pipeline: "Pipeline",
@@ -169,8 +187,17 @@ def resolve_linked_articles(
     # Strip frontmatter to get body
     body = _strip_frontmatter(content)
 
-    # Extract and filter links
+    # Extract links from Markdown body
     all_links = extract_links_from_markdown(body)
+
+    # Also extract linked_urls from frontmatter (e.g. from Feishu blocks API)
+    fm_urls = _read_frontmatter_linked_urls(content)
+    fm_link_set = {url for _, url in all_links}  # dedup against body links
+    for url in fm_urls:
+        if url not in fm_link_set:
+            all_links.append(("referenced article", url))
+            fm_link_set.add(url)
+
     stats["links_found"] = len(all_links)
 
     source_url = _read_frontmatter_source(content)

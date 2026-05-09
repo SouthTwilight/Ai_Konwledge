@@ -109,7 +109,7 @@ def test_filter_excludes_bare_domain():
 
 # --- _strip_frontmatter tests ---
 
-from pipeline.processors.link_resolver import _strip_frontmatter, _read_frontmatter_source
+from pipeline.processors.link_resolver import _strip_frontmatter, _read_frontmatter_source, _read_frontmatter_linked_urls
 
 
 def test_strip_frontmatter_removes_yaml():
@@ -132,7 +132,23 @@ def test_read_frontmatter_source_extracts_url():
 
 
 def test_read_frontmatter_source_empty_on_no_fm():
-    content = "# No frontmatter\n"
+    assert _read_frontmatter_source("no frontmatter here") == ""
+
+
+def test_read_frontmatter_linked_urls_extracts_list():
+    content = "---\ntitle: Test\nlinked_urls:\n- https://arxiv.org/abs/1706.03762\n- https://example.com\n---\nBody"
+    result = _read_frontmatter_linked_urls(content)
+    assert result == ["https://arxiv.org/abs/1706.03762", "https://example.com"]
+
+
+def test_read_frontmatter_linked_urls_empty_on_no_fm():
+    assert _read_frontmatter_linked_urls("no frontmatter") == []
+
+
+def test_read_frontmatter_linked_urls_empty_when_missing():
+    content = "---\ntitle: Test\n---\nBody"
+    result = _read_frontmatter_linked_urls(content)
+    assert result == []
     url = _read_frontmatter_source(content)
     assert url == ""
 
@@ -164,6 +180,33 @@ def _make_mock_pipeline():
     pipeline.writer.append_references = MagicMock()
     pipeline.writer.append_referenced_by = MagicMock()
     return pipeline
+
+
+@patch("pipeline.extractors.web_extractor.extract_url")
+def test_resolve_success_flow(mock_extract):
+    """Full resolve flow: frontmatter has linked_urls -> fetch -> write -> patch backlinks."""
+    from pipeline.processors.link_resolver import resolve_linked_articles
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        md_file = os.path.join(tmpdir, "source.md")
+        with open(md_file, "w") as f:
+            f.write("---\n")
+            f.write("title: Source Article\n")
+            f.write("source: https://example.com/article\n")
+            f.write("linked_urls:\n")
+            f.write("- https://arxiv.org/abs/1706.03762\n")
+            f.write("---\n\n# Source Article\n\nSome body text.\n")
+
+        mock_extract.return_value = Article(
+            url="https://arxiv.org/abs/1706.03762",
+            title="Attention Is All You Need",
+            source=ArticleSource.WEB_URL,
+            content_raw="Paper content here",
+        )
+
+        stats = _run_resolve(md_file, mock_extract, tmpdir)
+        assert stats["links_found"] >= 1
+        assert stats["fetched"] == 1
 
 
 @patch("pipeline.extractors.web_extractor.extract_url")
