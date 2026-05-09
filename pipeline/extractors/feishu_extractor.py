@@ -146,6 +146,43 @@ class FeishuClient:
             return None
         return doc
 
+    def get_blocks(self, document_id: str) -> list:
+        """Fetch all document blocks with rich content (including hyperlinks).
+
+        Paginates through all blocks. Returns a flat list of block dicts.
+        """
+        token = self._get_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        all_blocks = []
+        page_token = None
+
+        while True:
+            url = f"{FEISHU_API_BASE}/docx/v1/documents/{document_id}/blocks"
+            params = {"page_size": 500}
+            if page_token:
+                params["page_token"] = page_token
+
+            with httpx.Client(timeout=30) as client:
+                resp = client.get(url, headers=headers, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+
+            if data.get("code") != 0:
+                logger.error(
+                    "Feishu blocks API error for %s: code=%s msg=%s",
+                    document_id, data.get("code"), data.get("msg"),
+                )
+                break
+
+            items = data.get("data", {}).get("items", [])
+            all_blocks.extend(items)
+
+            page_token = data.get("data", {}).get("page_token")
+            if not page_token:
+                break
+
+        return all_blocks
+
 
 # ============================================================
 # Top-level extractor function
@@ -155,6 +192,80 @@ def _extract_title_from_markdown(md_text: str, doc_id: str) -> str:
     """Extract title from the first Markdown heading, or fallback to doc_id."""
     match = re.match(r'^#\s+(.+)$', md_text, re.MULTILINE)
     return match.group(1).strip() if match else doc_id
+
+
+# Mapping from block_type int to string key used in the API response.
+_BLOCK_TYPE_NAMES = {
+    2: "text", 3: "heading1", 4: "heading2", 5: "heading3",
+    6: "heading4", 7: "heading5", 8: "heading6", 9: "heading7",
+    10: "heading8", 11: "heading9", 12: "bullet", 13: "ordered",
+    14: "code", 15: "quote", 16: "todo", 18: "callout",
+}
+
+
+def extract_links_from_blocks(blocks: list) -> list:
+    """Extract hyperlinks from Feishu document blocks.
+
+    Returns list of (text, url) tuples.
+    """
+    from urllib.parse import unquote
+
+    link_items = []
+    for block in blocks:
+        bt = block.get("block_type")
+        name = _BLOCK_TYPE_NAMES.get(bt)
+        if not name:
+            continue
+        sub = block.get(name)
+        if not sub or not isinstance(sub, dict):
+            continue
+        for el in sub.get("elements", []):
+            text_run = el.get("text_run")
+            if not text_run:
+                continue
+            link = text_run.get("text_element_style", {}).get("link")
+            if link and link.get("url"):
+                url = unquote(link["url"])
+                text = text_run.get("content", "").strip()
+                if text and url:
+                    link_items.append((text, url))
+
+    return link_items
+
+
+def inject_links_into_markdown(content: str, links: list) -> str:
+    """Replace plain text mentions with [text](url) Markdown links.
+
+    For each (text, url) pair, finds the first occurrence of *text* in
+    the content that is NOT already inside a Markdown link, and wraps it.
+    """
+    for text, url in links:
+        # Skip if the text already appears inside a link [...](...)
+        # Pattern: the text preceded by ]( or not preceded by [
+        escaped = re.escape(text)
+        # Find occurrences not already part of a markdown link
+        pattern = rf'(?<!\[\S*){escaped}(?!\S*\]\()'
+        # Simple approach: if text exists and is not preceded by [xxx, replace first occurrence
+        # We use a safe approach - check if it's already linked
+        idx = 0
+        while idx < len(content):
+            pos = content.find(text, idx)
+            if pos == -1:
+                break
+            # Check if already inside a link: look back for '[...' without ']'
+            before = content[max(0, pos - 200):pos]
+            # Count unmatched '['
+            open_brackets = before.count('[') - before.count(']')
+            if open_brackets > 0:
+                # Already inside a link text, skip
+                idx = pos + len(text)
+                continue
+            # Replace this occurrence
+            replacement = f"[{text}]({url})"
+            content = content[:pos] + replacement + content[pos + len(text):]
+            break  # Only replace first occurrence per link
+
+    return content
 
 
 def _resolve_title(client: "FeishuClient", doc_id: str, content: str) -> str:
@@ -205,6 +316,17 @@ def extract_feishu_doc(url: str, config: FeishuConfig) -> Optional[Article]:
 
     if not content:
         return None
+
+    # Enrich content with hyperlinks from the Blocks API.
+    # raw_content loses links; blocks API preserves them.
+    try:
+        blocks = client.get_blocks(doc_id)
+        links = extract_links_from_blocks(blocks)
+        if links:
+            logger.info("Feishu doc %s: injecting %d hyperlinks from blocks", doc_id, len(links))
+            content = inject_links_into_markdown(content, links)
+    except Exception as e:
+        logger.warning("Feishu block enrichment failed for %s (non-fatal): %s", doc_id, e)
 
     title = _resolve_title(client, doc_id, content)
 
