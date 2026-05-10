@@ -89,9 +89,9 @@ class Pipeline:
     def __init__(self, config: PipelineConfig):
         self.config = config
         self.dedup = DedupStore(config.dedup_db_path)
-        self.l1 = L1Filter(config.model)
-        self.l2 = L2Summarizer(config.model)
-        self.l3 = L3Analyzer(config.model) if config.l3_enabled else None
+        self.l1 = L1Filter(config.l1_model)
+        self.l2 = L2Summarizer(config.l2_model)
+        self.l3 = L3Analyzer(config.l3_model) if config.l3_enabled else None
         self.writer = ObsidianWriter(config.vault_path)
 
     def run(
@@ -129,9 +129,9 @@ class Pipeline:
 
         # Step 1: Extract
         logger.info(f"=== Pipeline start: source={source} dry_run={dry_run} ===")
-        logger.info(f"Model config: L1={self.config.model.l1_model}, "
-                     f"L2={self.config.model.l2_model}, "
-                     f"api_base={self.config.model.api_base}")
+        logger.info(f"Model config: L1={self.config.l1_model.model}@{self.config.l1_model.base_url}, "
+                     f"L2={self.config.l2_model.model}@{self.config.l2_model.base_url}, "
+                     f"L3={self.config.l3_model.model}@{self.config.l3_model.base_url}")
         articles = self._extract(source, url, feishu_url, github_repos)
         stats["fetched"] = len(articles)
 

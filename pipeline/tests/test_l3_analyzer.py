@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from pipeline.models import Article, ArticleSource, ProcessingLevel
-from pipeline.config import ModelConfig
+from pipeline.config import LevelModelConfig
 from pipeline.processors.l3_analyzer import L3Analyzer, _extract_json
 
 
@@ -27,7 +27,7 @@ MOCK_L3_RESPONSE = json.dumps({
 
 
 def _mock_config():
-    return ModelConfig(api_key="test-key", l3_model="glm-5.1")
+    return LevelModelConfig(api_key="test-key", model="glm-5.1", max_tokens=8192)
 
 
 def _make_detailed_article():

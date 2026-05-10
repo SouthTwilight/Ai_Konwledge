@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from pipeline.models import Article, ArticleSource, ProcessingLevel
-from pipeline.config import ModelConfig
+from pipeline.config import LevelModelConfig
 from pipeline.processors.l1_filter import L1Filter
 
 
@@ -23,7 +23,7 @@ def sample_article():
 
 @pytest.fixture
 def l1_filter():
-    config = ModelConfig(api_key="test-key")
+    config = LevelModelConfig(api_key="test-key", model="glm-4.7", max_tokens=1024)
     return L1Filter(config)
 
 
@@ -70,7 +70,7 @@ class TestL1Filter:
 
     @patch("pipeline.processors.l1_filter.OpenAI")
     def test_batch_filter_threshold(self, mock_openai_cls):
-        config = ModelConfig(api_key="test-key")
+        config = LevelModelConfig(api_key="test-key", model="glm-4.7", max_tokens=1024)
         f = L1Filter(config)
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -21,6 +22,8 @@ VAULT_DIR = PROJECT_ROOT / 'vault' / 'SouthTwilight-Obsidian' / '南国微光' /
 DATA_DIR = PIPELINE_DIR / 'data'
 DEFAULT_CONFIG_PATH = PIPELINE_DIR / 'configs' / 'default.yaml'
 
+_logger = logging.getLogger(__name__)
+
 
 @dataclass
 class RSSSource:
@@ -32,7 +35,34 @@ class RSSSource:
 
 
 @dataclass
+class LevelModelConfig:
+    """Single-level model configuration (one per L1/L2/L3 processor).
+
+    api_key_env: declares which environment variable holds the API key.
+    api_key: resolved at load time from api_key_env via os.getenv().
+    """
+    base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    api_key_env: str = "GLM_API_KEY"
+    api_key: str = ""
+    model: str = "glm-4.7"
+    max_tokens: int = 1024
+    extra_body: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not self.api_key:
+            self.api_key = os.getenv(self.api_key_env, "")
+
+
+# ---------------------------------------------------------------------------
+# Legacy ModelConfig — kept for backward compatibility in tests.
+# Will be removed in a future cleanup.
+# ---------------------------------------------------------------------------
+@dataclass
 class ModelConfig:
+    """Legacy single-provider config. Tests construct this directly.
+
+    DEPRECATED: real code uses LevelModelConfig per level.
+    """
     provider: str = "zhipu"
     l1_model: str = "glm-4.7"
     l2_model: str = "glm-4.7"
@@ -65,7 +95,9 @@ class EmailConfig:
 
 @dataclass
 class PipelineConfig:
-    model: ModelConfig = field(default_factory=ModelConfig)
+    l1_model: LevelModelConfig = field(default_factory=LevelModelConfig)
+    l2_model: LevelModelConfig = field(default_factory=LevelModelConfig)
+    l3_model: LevelModelConfig = field(default_factory=LevelModelConfig)
     rss_sources: List[RSSSource] = field(default_factory=list)
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
@@ -82,9 +114,6 @@ class PipelineConfig:
     l3_min_score: int = 7  # Only analyze articles with score >= this
 
     def __post_init__(self):
-        # Load API key from env
-        if not self.model.api_key:
-            self.model.api_key = os.getenv('ZHIPU_API_KEY', '')
         # Load Feishu credentials from env
         if not self.feishu.app_id:
             self.feishu.app_id = os.getenv('FEISHU_APP_ID', '')
@@ -100,6 +129,10 @@ class PipelineConfig:
         # Ensure data dir exists
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+
+# ---------------------------------------------------------------------------
+# YAML loading helpers
+# ---------------------------------------------------------------------------
 
 def _load_rss_sources_from_yaml(path: Path) -> List[RSSSource]:
     """Parse a YAML file into a list of RSSSource objects."""
@@ -121,12 +154,67 @@ def _load_rss_sources_from_yaml(path: Path) -> List[RSSSource]:
     return sources
 
 
+def _parse_level_config(data: Dict[str, Any], defaults: Dict[str, Any]) -> LevelModelConfig:
+    """Parse one level (l1/l2/l3) dict from YAML into LevelModelConfig.
+
+    Missing keys fall back to *defaults* dict.
+    """
+    merged = {**defaults, **data}
+    return LevelModelConfig(
+        base_url=merged.get('base_url', 'https://open.bigmodel.cn/api/paas/v4'),
+        api_key_env=merged.get('api_key_env', 'GLM_API_KEY'),
+        model=merged.get('model', 'glm-4.7'),
+        max_tokens=merged.get('max_tokens', 1024),
+        extra_body=merged.get('extra_body', {}),
+    )
+
+
+def _load_models_from_yaml(path: Path) -> Dict[str, Dict[str, LevelModelConfig]]:
+    """Load models section from YAML.  Returns {profile_name: {l1: cfg, l2: cfg, l3: cfg}}."""
+    with open(path, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+
+    if not data or 'models' not in data:
+        return {}
+
+    result: Dict[str, Dict[str, LevelModelConfig]] = {}
+    for profile_name, profile_data in data['models'].items():
+        levels: Dict[str, LevelModelConfig] = {}
+        for level_key in ('l1', 'l2', 'l3'):
+            level_dict = profile_data.get(level_key, {}) or {}
+            # Defaults per level
+            if level_key == 'l1':
+                defaults = {'model': 'glm-4.7', 'max_tokens': 1024}
+            elif level_key == 'l2':
+                defaults = {'model': 'glm-4.7', 'max_tokens': 4096}
+            else:
+                defaults = {'model': 'glm-5.1', 'max_tokens': 8192}
+            levels[level_key] = _parse_level_config(level_dict, defaults)
+        result[profile_name] = levels
+    return result
+
+
+def _resolve_profile(
+    models_map: Dict[str, Dict[str, LevelModelConfig]],
+    profile_name: str,
+) -> Dict[str, LevelModelConfig]:
+    """Select a profile from the models map, with validation."""
+    if profile_name not in models_map:
+        available = ', '.join(sorted(models_map.keys()))
+        raise ValueError(
+            f"MODEL_PROFILE='{profile_name}' not found in YAML models section. "
+            f"Available profiles: [{available}]"
+        )
+    return models_map[profile_name]
+
+
 def load_config(config_path: Optional[str] = None) -> PipelineConfig:
-    """Load pipeline config, with RSS sources from a YAML config file.
+    """Load pipeline config, with RSS sources and models from a YAML config file.
 
     Args:
         config_path: Path to YAML config file. Defaults to pipeline/configs/default.yaml.
-                     If the file doesn't exist, RSS sources will be empty.
+                     If the file doesn't exist, RSS sources will be empty and model
+                     config falls back to hardcoded defaults.
 
     Returns:
         Fully configured PipelineConfig instance.
@@ -141,12 +229,43 @@ def load_config(config_path: Optional[str] = None) -> PipelineConfig:
 
     # Load RSS sources from YAML
     rss_sources: List[RSSSource] = []
+    l1_model: Optional[LevelModelConfig] = None
+    l2_model: Optional[LevelModelConfig] = None
+    l3_model: Optional[LevelModelConfig] = None
+
     if path.exists():
         rss_sources = _load_rss_sources_from_yaml(path)
-    else:
-        import logging
-        logging.getLogger(__name__).warning(
-            f"Config file not found: {path}, no RSS sources loaded"
-        )
 
-    return PipelineConfig(rss_sources=rss_sources)
+        # Load models section
+        try:
+            models_map = _load_models_from_yaml(path)
+            if models_map:
+                profile_name = os.getenv('MODEL_PROFILE', 'default')
+                levels = _resolve_profile(models_map, profile_name)
+                l1_model = levels['l1']
+                l2_model = levels['l2']
+                l3_model = levels['l3']
+                _logger.info(
+                    f"Loaded model profile '{profile_name}': "
+                    f"L1={l1_model.model}, L2={l2_model.model}, L3={l3_model.model}"
+                )
+        except ValueError as e:
+            _logger.error(str(e))
+            raise
+    else:
+        _logger.warning(f"Config file not found: {path}, using defaults")
+
+    # Fallback defaults if no models section in YAML
+    if l1_model is None:
+        l1_model = LevelModelConfig(model="glm-4.7", max_tokens=1024)
+    if l2_model is None:
+        l2_model = LevelModelConfig(model="glm-4.7", max_tokens=4096)
+    if l3_model is None:
+        l3_model = LevelModelConfig(model="glm-5.1", max_tokens=8192)
+
+    return PipelineConfig(
+        l1_model=l1_model,
+        l2_model=l2_model,
+        l3_model=l3_model,
+        rss_sources=rss_sources,
+    )

@@ -2,7 +2,7 @@
 
 AI 驱动的个人知识库流水线：RSS / Web URL / 飞书文档 / GitHub 项目分析 / Email Newsletter → AI 处理 → Obsidian Vault
 
-自动从多种内容源抓取文章和技术动态，使用智谱 GLM 系列模型进行三级处理：GLM-4.7 筛选相关性并生成摘要，GLM-5.1 进行深度分析，自动生成主题聚类与知识地图（MOC），最终输出格式美观的 Markdown 笔记到 Obsidian 知识库。
+自动从多种内容源抓取文章和技术动态，使用 AI 模型进行三级处理：L1 筛选相关性并生成摘要，L2 结构化摘要，L3 深度分析，自动生成主题聚类与知识地图（MOC），最终输出格式美观的 Markdown 笔记到 Obsidian 知识库。模型配置支持 YAML 驱动的多 profile 切换，可灵活选用不同 AI 提供商。
 
 ---
 
@@ -10,13 +10,13 @@ AI 驱动的个人知识库流水线：RSS / Web URL / 飞书文档 / GitHub 项
 
 ```
 ┌───────────────────┐     ┌───────────┐     ┌──────────┐     ┌──────────┐     ┌────────────────┐
-│    内容源          │────▶│   抓取    │────▶│  去重    │────▶│ L1 筛选  │────▶│   L2 摘要      │
-│  RSS / URL / 飞书  │     │ trafilatura│     │  SQLite  │     │ GLM-4.7  │     │   GLM-4.7      │
-│  GitHub / Email   │     │ feedparser │     │ URL规范化 │     │          │     │                │
-│                   │     │ httpx/imap │     │          │     │          │     │                │
+│    内容源          │────▶│   抓取     │───▶│  去重     │────▶│ L1 筛选  │────▶│    L2 摘要      │
+│  RSS / URL / 飞书  │     │trafilatura│     │  SQLite  │     │ GLM-4.7  │     │   GLM-4.7      │
+│  GitHub / Email   │     │feedparser │     │ URL规范化 │     │          │     │                │
+│                   │     │httpx/imap │     │          │     │          │     │                │
 └───────────────────┘     └───────────┘     └──────────┘     └──────────┘     └───────┬────────┘
-                                                                            │
-                          ┌─────────────────────────────────────────────────────────┘
+                                                                                      │
+                          ┌───────────────────────────────────────────────────────────┘
                           │ 评分分层
                           ├── 得分 < 4  → 丢弃（不相关）
                           ├── 得分 4-6  → 压缩摘要
@@ -24,7 +24,7 @@ AI 驱动的个人知识库流水线：RSS / Web URL / 飞书文档 / GitHub 项
                           ▼
                    ┌────────────────┐     ┌────────────────┐
                    │ L3 深度分析    │────▶│ Obsidian 写入  │
-                   │   GLM-5.1      │     │ + MOC 自动生成  │
+                   │    AI 模型     │     │ + MOC 自动生成  │
                    └────────────────┘     └────────────────┘
 ```
 
@@ -73,13 +73,13 @@ pip install -r pipeline/requirements.txt
 在项目根目录创建 `.env` 文件：
 
 ```bash
-echo 'ZHIPU_API_KEY=你的密钥' > .env
+echo 'GLM_API_KEY=你的智谱密钥' > .env
 ```
 
 或者通过环境变量设置：
 
 ```bash
-export ZHIPU_API_KEY=你的密钥
+export GLM_API_KEY=你的智谱密钥
 ```
 
 ### 运行流水线
@@ -201,16 +201,51 @@ sources:
 
 ### 模型设置
 
-所有配置集中在 `pipeline/config.py`，关键配置如下：
+模型配置通过 YAML 文件管理，支持多 profile 切换。默认配置位于 `pipeline/configs/default.yaml` 的 `models` 段。
+
+**默认 profile（智谱 GLM）：**
+
+```yaml
+models:
+  default:
+    l1:
+      api_key_env: "GLM_API_KEY"
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      model: "glm-4.7"
+      max_tokens: 1024
+      extra_body:
+        thinking:
+          type: disabled
+    l2:
+      api_key_env: "GLM_API_KEY"
+      model: "glm-4.7"
+      max_tokens: 4096
+    l3:
+      api_key_env: "GLM_API_KEY"
+      model: "glm-5.1"
+      max_tokens: 8192
+```
+
+**切换模型 profile：**
+
+```bash
+# 使用默认 profile（智谱 GLM）
+python -m pipeline.main --source rss
+
+# 切换到其他 profile（如 DeepSeek）
+MODEL_PROFILE=deepseek python -m pipeline.main --source rss
+```
+
+**关键设计：**
+- `api_key_env`：声明从哪个环境变量读取 API Key（而非硬编码变量名）
+- 同一 provider 的 L1/L2/L3 可共用一个 key（如 `GLM_API_KEY`）
+- 切换 profile 时 API Key 自动跟随，无需手动改配置
+- `extra_body`：传给 API 的额外参数（如 `thinking: disabled`），为空则不传
+
+**Pipeline 配置项（`pipeline/config.py`）：**
 
 | 设置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `provider` | zhipu | API 提供商 |
-| `l1_model` | glm-4.7 | L1 相关性评分模型 |
-| `l2_model` | glm-4.7 | L2 摘要生成模型 |
-| `l3_model` | glm-5.1 | L3 深度分析模型 |
-| `api_base` | https://open.bigmodel.cn/api/paas/v4 | 智谱 API 接口地址 |
-| `relevance_threshold` | 6 | 通过 L1 筛选的最低分数（1-10） |
 | `tier_discard_max` | 3 | 评分 ≤ 此值直接丢弃 |
 | `tier_compressed_max` | 6 | 评分 ≤ 此值生成压缩摘要 |
 | `l3_enabled` | True | 是否启用 L3 深度分析 |
@@ -221,13 +256,17 @@ sources:
 
 | 变量 | 是否必填 | 说明 |
 |------|----------|------|
-| `ZHIPU_API_KEY` | 是 | 智谱 API 密钥，用于 LLM 调用 |
+| `GLM_API_KEY` | 是（默认 profile） | 智谱 API 密钥 |
+| `DEEPSEEK_API_KEY` | 按需 | DeepSeek API 密钥（使用 deepseek profile 时） |
+| `MODEL_PROFILE` | 否（默认 `default`） | 选择 YAML 中哪个 models profile |
 | `FEISHU_APP_ID` | 飞书必填 | 飞书企业自建应用 App ID |
 | `FEISHU_APP_SECRET` | 飞书必填 | 飞书企业自建应用 App Secret |
 | `GITHUB_TOKEN` | GitHub 推荐 | GitHub Personal Access Token |
 | `EMAIL_IMAP_SERVER` | Email 必填 | IMAP 服务器地址 |
 | `EMAIL_USERNAME` | Email 必填 | 邮箱用户名 |
 | `EMAIL_APP_PASSWORD` | Email 必填 | 邮箱应用专用密码 |
+
+> API Key 的环境变量名由 YAML 中的 `api_key_env` 字段决定，不限于上表。用户可自由命名。
 
 ---
 
@@ -421,7 +460,7 @@ pytest pipeline/tests/ -v
 pytest pipeline/tests/test_l3_analyzer.py -v
 ```
 
-共 **193 个测试**，覆盖 14 个测试文件。所有外部依赖（feedparser、trafilatura、OpenAI API、飞书 API、GitHub API、IMAP、Embedding API）均已 mock，无需网络连接。
+共 **203 个测试**，覆盖 14 个测试文件。所有外部依赖（feedparser、trafilatura、OpenAI API、飞书 API、GitHub API、IMAP、Embedding API）均已 mock，无需网络连接。
 
 | 模块 | 测试数 | 覆盖范围 |
 |------|--------|----------|
@@ -430,7 +469,7 @@ pytest pipeline/tests/test_l3_analyzer.py -v
 | email_extractor.py | 25 | HTML→Markdown、发件人白名单、IMAP 连接、MIME 解析、footer 清理 |
 | feishu_extractor.py | 18 | URL 解析、Token 缓存、API 调用、文档提取、标题回退 |
 | obsidian_writer.py | 19 | frontmatter、目录路由（含 GitHub 仓库名路由）、文件名冲突、评分分层 |
-| config.py | 9 | 默认配置、YAML 加载、enabled 字段、环境变量 |
+| config.py | 18 | 默认配置、YAML 加载、enabled 字段、环境变量、模型 profile 切换、api_key_env 解析、hybrid profile |
 | l3_analyzer.py | 12 | 深度分析、概念提取、结构识别、批处理、错误处理 |
 | l2_summarizer.py | 5 | 摘要生成、JSON 解析、错误处理 |
 | l1_filter.py | 4 | 相关性评分、阈值筛选、错误处理 |
@@ -453,7 +492,7 @@ knowledge-base/
 ├── pipeline/
 │   ├── __init__.py
 │   ├── main.py                  ← CLI 入口（支持 5 种来源 + L3 深度分析）
-│   ├── config.py                ← 配置数据类 + YAML 加载 + L3 配置
+│   ├── config.py                ← 配置数据类 + YAML 加载 + 模型 profile 动态化
 │   ├── models.py                ← Article、ArticleSource、ProcessingLevel + L3 字段
 │   ├── requirements.txt         ← Python 依赖
 │   ├── .venv/                   ← Python 3.11 虚拟环境
@@ -469,16 +508,16 @@ knowledge-base/
 │   │   ├── github_extractor.py  ← GitHub 项目分析（README + 仓库元数据）
 │   │   └── email_extractor.py   ← Email Newsletter 提取（IMAP + HTML→MD）
 │   ├── processors/              ← AI 处理器
-│   │   ├── l1_filter.py         ← L1 相关性评分（GLM-4.7）
-│   │   ├── l2_summarizer.py     ← L2 摘要生成（GLM-4.7）
-│   │   ├── l3_analyzer.py       ← L3 深度分析（GLM-5.1）
+│    │   ├── l1_filter.py         ← L1 相关性评分
+│   │   ├── l2_summarizer.py     ← L2 摘要生成
+│   │   ├── l3_analyzer.py       ← L3 深度分析
 │   │   ├── clusterer.py         ← 主题聚类（Embedding + HDBSCAN）
 │   │   └── moc_generator.py     ← MOC 知识地图自动生成
 │   ├── formatters/              ← 格式化输出
 │   │   └── obsidian_writer.py   ← Markdown 格式化 + 目录路由 + L3 Deep Analysis 输出
 │   ├── utils/                   ← 工具模块
 │   │   └── dedup.py             ← SQLite URL 去重（增强规范化）
-│   └── tests/                   ← pytest 测试（193 个）
+│   └── tests/                   ← pytest 测试（203 个）
 ├── vault/                       ← Obsidian 知识库
 │   └── SouthTwilight-Obsidian/  ← Obsidian 仓库根目录
 │       ├── .obsidian/
@@ -504,6 +543,7 @@ knowledge-base/
 - [x] **Phase 2a（飞书提取器）** — 飞书文档提取：开放平台 API 鉴权、tenant_access_token 缓存、Markdown 原文提取
 - [x] **Phase 2（扩展）** — Hermes Cron 定时调度、GitHub Release 提取器、Email Newsletter 提取器
 - [x] **Phase 3（深度分析）** — GitHub 项目能力分析、L3 深度分析（GLM-5.1）、主题聚类（Embedding + HDBSCAN）、MOC 知识地图、标题回退链、URL 去重规范化增强
+- [x] **模型配置动态化** — YAML 驱动的多 profile 模型配置、api_key_env 环境变量声明、MODEL_PROFILE 切换、extra_body 参数化
 
 ---
 

@@ -4,14 +4,16 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 
 from pipeline.models import Article, ArticleSource, ProcessingLevel
-from pipeline.config import PipelineConfig, ModelConfig, FeishuConfig, EmailConfig
+from pipeline.config import PipelineConfig, LevelModelConfig, FeishuConfig, EmailConfig
 from pipeline.main import Pipeline
 
 
 @pytest.fixture
 def mock_config(tmp_path):
     return PipelineConfig(
-        model=ModelConfig(api_key="test-key"),
+        l1_model=LevelModelConfig(api_key="test-key", model="glm-4.7", max_tokens=1024),
+        l2_model=LevelModelConfig(api_key="test-key", model="glm-4.7", max_tokens=4096),
+        l3_model=LevelModelConfig(api_key="test-key", model="glm-5.1", max_tokens=8192),
         feishu=FeishuConfig(app_id="test_app", app_secret="test_secret"),
         email=EmailConfig(
             imap_server="imap.test.com",

@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from pipeline.models import Article, ArticleSource, ProcessingLevel
-from pipeline.config import ModelConfig
+from pipeline.config import LevelModelConfig
 from pipeline.processors.l2_summarizer import L2Summarizer, _extract_json
 
 
@@ -29,7 +29,7 @@ def l1_article():
 
 @pytest.fixture
 def summarizer():
-    config = ModelConfig(api_key="test-key")
+    config = LevelModelConfig(api_key="test-key", model="glm-4.7", max_tokens=4096)
     return L2Summarizer(config)
 
 

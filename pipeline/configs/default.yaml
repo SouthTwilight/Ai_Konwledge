@@ -1,4 +1,6 @@
 name: default
+
+# ===== RSS Sources =====
 sources:
   - name: 品玩
     url: https://plink.anyfeeder.com/appinn
@@ -32,3 +34,51 @@ sources:
     url: https://plink.anyfeeder.com/zhihu/daily
     category: tech
     max_articles: 10
+
+# ===== Model Profiles =====
+# Switch via MODEL_PROFILE env var (default: "default")
+# API keys are resolved from api_key_env field at runtime
+models:
+  default:
+    l1:
+      api_key_env: "GLM_API_KEY"
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      model: "glm-4.7"
+      max_tokens: 1024
+      extra_body:
+        thinking:
+          type: disabled
+    l2:
+      api_key_env: "GLM_API_KEY"
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      model: "glm-4.7"
+      max_tokens: 4096
+      extra_body:
+        thinking:
+          type: disabled
+    l3:
+      api_key_env: "GLM_API_KEY"
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      model: "glm-5.1"
+      max_tokens: 8192
+      extra_body:
+        thinking:
+          type: disabled
+
+  # Uncomment to use DeepSeek:
+  # deepseek:
+  #   l1:
+  #     api_key_env: "DEEPSEEK_API_KEY"
+  #     base_url: "https://api.deepseek.com/v1"
+  #     model: "deepseek-chat"
+  #     max_tokens: 1024
+  #   l2:
+  #     api_key_env: "DEEPSEEK_API_KEY"
+  #     base_url: "https://api.deepseek.com/v1"
+  #     model: "deepseek-chat"
+  #     max_tokens: 4096
+  #   l3:
+  #     api_key_env: "DEEPSEEK_API_KEY"
+  #     base_url: "https://api.deepseek.com/v1"
+  #     model: "deepseek-chat"
+  #     max_tokens: 8192

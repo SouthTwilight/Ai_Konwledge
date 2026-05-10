@@ -13,7 +13,7 @@ from typing import List, Optional
 from openai import OpenAI
 
 from pipeline.models import Article, ProcessingLevel
-from pipeline.config import ModelConfig
+from pipeline.config import LevelModelConfig
 from pipeline.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
@@ -96,13 +96,13 @@ def _extract_json(text: str) -> Optional[str]:
 
 
 class L2Summarizer:
-    """L2 structured summarizer using GLM-4.7 (reasoning model)."""
+    """L2 structured summarizer using configurable model."""
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: LevelModelConfig):
         self.config = config
         self.client = OpenAI(
             api_key=config.api_key,
-            base_url=config.api_base,
+            base_url=config.base_url,
         )
 
     def summarize_article(self, article: Article) -> Article:
@@ -112,10 +112,10 @@ class L2Summarizer:
         # Select prompt and truncation based on content tier
         if article.content_tier == "detailed":
             system_prompt = SYSTEM_PROMPT_DETAILED
-            max_chars = self.config.max_tokens_l2 * 2  # Less truncation for detailed
+            max_chars = self.config.max_tokens * 2  # Less truncation for detailed
         else:
             system_prompt = SYSTEM_PROMPT
-            max_chars = self.config.max_tokens_l2 * 3
+            max_chars = self.config.max_tokens * 3
 
         if len(content) > max_chars:
             content = content[:max_chars] + "\n[...truncated]"
@@ -123,7 +123,7 @@ class L2Summarizer:
         try:
             response = retry_with_backoff(
                 lambda: self.client.chat.completions.create(
-                    model=self.config.l2_model,
+                    model=self.config.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
@@ -132,9 +132,9 @@ class L2Summarizer:
                             content=content,
                         )},
                     ],
-                    max_tokens=self.config.max_tokens_l2,
+                    max_tokens=self.config.max_tokens,
                     temperature=0.3,
-                    extra_body={"thinking": {"type": "disabled"}},
+                    **(self.config.extra_body or {}),
                 ),
                 label=f"L2 summarize '{article.title[:30]}'",
             )

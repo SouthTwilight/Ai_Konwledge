@@ -13,7 +13,7 @@ from typing import List, Optional
 from openai import OpenAI
 
 from pipeline.models import Article, ProcessingLevel
-from pipeline.config import ModelConfig
+from pipeline.config import LevelModelConfig
 from pipeline.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
@@ -96,13 +96,13 @@ def _extract_json(text: str) -> Optional[str]:
 
 
 class L1Filter:
-    """L1 relevance filter using GLM-4.7 (reasoning model)."""
+    """L1 relevance filter using configurable model."""
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: LevelModelConfig):
         self.config = config
         self.client = OpenAI(
             api_key=config.api_key,
-            base_url=config.api_base,
+            base_url=config.base_url,
         )
 
     def filter_article(self, article: Article) -> Optional[Article]:
@@ -112,7 +112,7 @@ class L1Filter:
         try:
             response = retry_with_backoff(
                 lambda: self.client.chat.completions.create(
-                    model=self.config.l1_model,
+                    model=self.config.model,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
@@ -121,9 +121,9 @@ class L1Filter:
                             content=content_preview,
                         )},
                     ],
-                    max_tokens=self.config.max_tokens_l1,
+                    max_tokens=self.config.max_tokens,
                     temperature=0.1,
-                    extra_body={"thinking": {"type": "disabled"}},
+                    **(self.config.extra_body or {}),
                 ),
                 label=f"L1 filter '{article.title[:30]}'",
             )

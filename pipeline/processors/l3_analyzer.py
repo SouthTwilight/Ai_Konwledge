@@ -16,7 +16,7 @@ from typing import List, Optional
 from openai import OpenAI
 
 from pipeline.models import Article, ProcessingLevel
-from pipeline.config import ModelConfig
+from pipeline.config import LevelModelConfig
 from pipeline.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
@@ -81,13 +81,13 @@ def _extract_json(text: str) -> Optional[str]:
 
 
 class L3Analyzer:
-    """L3 deep analyzer using GLM-5.1."""
+    """L3 deep analyzer using configurable model."""
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: LevelModelConfig):
         self.config = config
         self.client = OpenAI(
             api_key=config.api_key,
-            base_url=config.api_base,
+            base_url=config.base_url,
         )
 
     def analyze_article(self, article: Article) -> Article:
@@ -103,14 +103,14 @@ class L3Analyzer:
         summary = article.content_summary or ""
 
         # Truncate content to fit token limits
-        max_chars = self.config.max_tokens_l3 * 2
+        max_chars = self.config.max_tokens * 2
         if len(content) > max_chars:
             content = content[:max_chars] + "\n[...truncated for analysis]"
 
         try:
             response = retry_with_backoff(
                 lambda: self.client.chat.completions.create(
-                    model=self.config.l3_model,
+                    model=self.config.model,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
@@ -120,9 +120,9 @@ class L3Analyzer:
                             content=content,
                         )},
                     ],
-                    max_tokens=self.config.max_tokens_l3,
+                    max_tokens=self.config.max_tokens,
                     temperature=0.2,
-                    extra_body={"thinking": {"type": "disabled"}},
+                    **(self.config.extra_body or {}),
                 ),
                 label=f"L3 analyze '{article.title[:30]}'",
             )
