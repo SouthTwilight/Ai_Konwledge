@@ -137,7 +137,7 @@ def load_config(config_path: Optional[str] = None) -> PipelineConfig:
     else:
         path = Path(config_path)
         if not path.is_absolute():
-            path = PIPELINE_DIR / 'configs' / path.name
+            path = Path.cwd() / path
 
     # Load RSS sources from YAML
     rss_sources: List[RSSSource] = []

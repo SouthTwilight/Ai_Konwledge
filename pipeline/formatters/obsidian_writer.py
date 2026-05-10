@@ -157,10 +157,10 @@ class ObsidianWriter:
 
         # Handle filename collisions
         filepath = target_dir / filename
+        original_stem = filepath.stem
         counter = 1
         while filepath.exists():
-            stem = filepath.stem
-            filepath = target_dir / f"{stem}-{counter}.md"
+            filepath = target_dir / f"{original_stem}-{counter}.md"
             counter += 1
 
         filepath.write_text(content, encoding="utf-8")

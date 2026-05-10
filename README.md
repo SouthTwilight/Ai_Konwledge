@@ -398,6 +398,12 @@ hash: a1b2c3d4e5f6
 | scikit-learn | >=1.3.0 | 向量处理（聚类辅助） |
 | pytest | >=7.0.0 | 测试框架 |
 
+> **设计决策 — Playwright 裁减说明**
+> 项目曾评估 Playwright（headless browser）用于 JS 渲染页面的抓取，但最终决定移除。
+> 原因：(1) Chromium 二进制 ~350MB，严重违背轻量化单机工具的定位；(2) trafilatura 已能
+> 覆盖绝大多数网页正文提取场景；(3) 标题回退链（`<title>` → `<h1>` → URL slug）提供了
+> 足够的容错。对于少数 JS 渲染必需的场景，可后续按需引入。
+
 > 注：GitHub Extractor 使用 httpx（已在依赖中），Email Extractor 使用 Python 内置的 `imaplib` 和 `email` 库。主题聚类使用智谱 Embedding API，无需本地模型。
 
 ---

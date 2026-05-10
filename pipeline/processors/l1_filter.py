@@ -14,6 +14,7 @@ from openai import OpenAI
 
 from pipeline.models import Article, ProcessingLevel
 from pipeline.config import ModelConfig
+from pipeline.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -109,19 +110,22 @@ class L1Filter:
         content_preview = article.content_raw[:2000] if article.content_raw else article.title
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.config.l1_model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-                        title=article.title,
-                        source_name=article.source_name,
-                        content=content_preview,
-                    )},
-                ],
-                max_tokens=self.config.max_tokens_l1,
-                temperature=0.1,
-                extra_body={"thinking": {"type": "disabled"}},
+            response = retry_with_backoff(
+                lambda: self.client.chat.completions.create(
+                    model=self.config.l1_model,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
+                            title=article.title,
+                            source_name=article.source_name,
+                            content=content_preview,
+                        )},
+                    ],
+                    max_tokens=self.config.max_tokens_l1,
+                    temperature=0.1,
+                    extra_body={"thinking": {"type": "disabled"}},
+                ),
+                label=f"L1 filter '{article.title[:30]}'",
             )
 
             raw = response.choices[0].message.content

@@ -189,17 +189,24 @@ def _compute_message_id(msg) -> str:
 def _is_sender_allowed(sender_addr: str, whitelist: List[str]) -> bool:
     """Check if sender address matches any whitelist entry.
 
-    Supports partial matching: 'newsletter@example.com' matches 'example.com'.
+    Supports partial matching:
+    - Full email: 'newsletter@example.com' matches exactly.
+    - Domain: 'example.com' matches any address @example.com.
     """
     if not whitelist:
         # If no whitelist configured, allow all
         return True
+    sender_lower = sender_addr.lower()
     for allowed in whitelist:
         allowed_lower = allowed.lower()
-        if allowed_lower in sender_addr or sender_addr.endswith(allowed_lower):
+        # Exact full email match
+        if "@" in allowed_lower and sender_lower == allowed_lower:
             return True
-        # Also match display name
-        if "@" in allowed_lower and allowed_lower == sender_addr:
+        # Domain match: 'example.com' matches 'user@example.com'
+        if sender_lower.endswith("@" + allowed_lower):
+            return True
+        # Substring match for display name portion (e.g. "Newsletter" in "Newsletter <a@b.com>")
+        if allowed_lower in sender_lower:
             return True
     return False
 

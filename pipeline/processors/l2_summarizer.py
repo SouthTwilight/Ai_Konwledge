@@ -14,6 +14,7 @@ from openai import OpenAI
 
 from pipeline.models import Article, ProcessingLevel
 from pipeline.config import ModelConfig
+from pipeline.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -120,19 +121,22 @@ class L2Summarizer:
             content = content[:max_chars] + "\n[...truncated]"
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.config.l2_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-                        title=article.title,
-                        tags=", ".join(article.tags) if article.tags else "none",
-                        content=content,
-                    )},
-                ],
-                max_tokens=self.config.max_tokens_l2,
-                temperature=0.3,
-                extra_body={"thinking": {"type": "disabled"}},
+            response = retry_with_backoff(
+                lambda: self.client.chat.completions.create(
+                    model=self.config.l2_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
+                            title=article.title,
+                            tags=", ".join(article.tags) if article.tags else "none",
+                            content=content,
+                        )},
+                    ],
+                    max_tokens=self.config.max_tokens_l2,
+                    temperature=0.3,
+                    extra_body={"thinking": {"type": "disabled"}},
+                ),
+                label=f"L2 summarize '{article.title[:30]}'",
             )
 
             raw = response.choices[0].message.content

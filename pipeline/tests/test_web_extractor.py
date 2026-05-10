@@ -36,9 +36,9 @@ def test_title_empty_when_nothing():
 def test_extract_url_success():
     with patch('pipeline.extractors.web_extractor.trafilatura') as mock_traf:
         mock_traf.fetch_url.return_value = '<html><body>Content</body></html>'
+        # JSON extraction returns both text and metadata
         mock_traf.extract.side_effect = [
-            'Clean article text',
-            '{"title":"Test","author":"Author","date":"2026-01-01"}',
+            '{"title":"Test","author":"Author","date":"2026-01-01","text":"Clean article text"}',
         ]
         article = extract_url('https://example.com/article')
 
@@ -68,12 +68,11 @@ def test_extract_urls_multiple():
 
 
 def test_extract_url_title_fallback_to_html():
-    """When trafilatura returns no title, fallback to HTML <title>."""
+    """When trafilatura JSON returns no title, fallback to HTML <title>."""
     with patch('pipeline.extractors.web_extractor.trafilatura') as mock_traf:
         mock_traf.fetch_url.return_value = '<html><head><title>HTML Title</title></head><body>Content</body></html>'
         mock_traf.extract.side_effect = [
-            'article content',
-            '',  # metadata (empty)
+            '{"text":"article content"}',  # JSON with text but no title
         ]
         article = extract_url('https://example.com/article')
 
@@ -86,8 +85,7 @@ def test_extract_url_title_fallback_to_url_slug():
     with patch('pipeline.extractors.web_extractor.trafilatura') as mock_traf:
         mock_traf.fetch_url.return_value = '<html><body>Content</body></html>'
         mock_traf.extract.side_effect = [
-            'article content',
-            '',
+            '{"text":"article content"}',  # JSON with text but no title
         ]
         article = extract_url('https://example.com/my-article-title')
 
@@ -100,8 +98,7 @@ def test_extract_url_title_fallback_to_h1():
     with patch('pipeline.extractors.web_extractor.trafilatura') as mock_traf:
         mock_traf.fetch_url.return_value = '<html><head><title></title></head><body><h1>Page Heading</h1><p>Content</p></body></html>'
         mock_traf.extract.side_effect = [
-            'article text',
-            '',
+            '{"text":"article text"}',  # JSON with text but no title
         ]
         article = extract_url('https://example.com/page')
 
@@ -114,9 +111,23 @@ def test_extract_url_no_content_returns_none():
     with patch('pipeline.extractors.web_extractor.trafilatura') as mock_traf:
         mock_traf.fetch_url.return_value = '<html><body></body></html>'
         mock_traf.extract.side_effect = [
-            None,  # content extraction fails
-            '',
+            None,  # JSON extraction fails
+            None,  # plain text fallback also fails
         ]
         result = extract_url('https://example.com/empty')
 
     assert result is None
+
+
+def test_extract_url_json_fails_plain_fallback():
+    """When JSON extraction fails but plain text works, use plain text."""
+    with patch('pipeline.extractors.web_extractor.trafilatura') as mock_traf:
+        mock_traf.fetch_url.return_value = '<html><body>Content</body></html>'
+        mock_traf.extract.side_effect = [
+            None,  # JSON extraction fails
+            'plain text content',  # plain text fallback succeeds
+        ]
+        article = extract_url('https://example.com/article')
+
+    assert article is not None
+    assert article.content_raw == 'plain text content'

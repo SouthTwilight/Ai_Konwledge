@@ -215,5 +215,6 @@ def extract_feishu_doc(url: str, config: FeishuConfig) -> Optional[Article]:
         content_raw=content,
         source_name="feishu",
     )
+    article.compute_hash()
     logger.info("Extracted Feishu doc: %s (%d chars)", title, len(content))
     return article

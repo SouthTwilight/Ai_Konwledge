@@ -17,6 +17,7 @@ from openai import OpenAI
 
 from pipeline.models import Article, ProcessingLevel
 from pipeline.config import ModelConfig
+from pipeline.utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -107,20 +108,23 @@ class L3Analyzer:
             content = content[:max_chars] + "\n[...truncated for analysis]"
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.config.l3_model,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
-                        title=article.title,
-                        tags=", ".join(article.tags) if article.tags else "none",
-                        summary=summary[:500] if summary else "N/A",
-                        content=content,
-                    )},
-                ],
-                max_tokens=self.config.max_tokens_l3,
-                temperature=0.2,
-                extra_body={"thinking": {"type": "disabled"}},
+            response = retry_with_backoff(
+                lambda: self.client.chat.completions.create(
+                    model=self.config.l3_model,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": USER_PROMPT_TEMPLATE.format(
+                            title=article.title,
+                            tags=", ".join(article.tags) if article.tags else "none",
+                            summary=summary[:500] if summary else "N/A",
+                            content=content,
+                        )},
+                    ],
+                    max_tokens=self.config.max_tokens_l3,
+                    temperature=0.2,
+                    extra_body={"thinking": {"type": "disabled"}},
+                ),
+                label=f"L3 analyze '{article.title[:30]}'",
             )
 
             raw = response.choices[0].message.content

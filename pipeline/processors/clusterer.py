@@ -19,7 +19,8 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-GITHUB_API = "https://api.github.com"
+# Default embedding API base URL; can be overridden via EMBEDDING_API_BASE env var
+DEFAULT_EMBEDDING_API_BASE = "https://open.bigmodel.cn/api/paas/v4"
 
 
 def read_vault_articles(vault_path: Path) -> List[dict]:
@@ -104,6 +105,7 @@ def _embed_text_zhipu(texts: List[str], api_key: str) -> List[List[float]]:
         logger.warning("No API key for embedding generation")
         return []
 
+    api_base = os.getenv("EMBEDDING_API_BASE", DEFAULT_EMBEDDING_API_BASE)
     embeddings = []
     # Process in batches of 16 (ZhipuAI limit)
     batch_size = 16
@@ -111,7 +113,7 @@ def _embed_text_zhipu(texts: List[str], api_key: str) -> List[List[float]]:
         batch = texts[i:i + batch_size]
         try:
             resp = httpx.post(
-                "https://open.bigmodel.cn/api/paas/v4/embeddings",
+                f"{api_base}/embeddings",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json={
                     "model": "embedding-3",

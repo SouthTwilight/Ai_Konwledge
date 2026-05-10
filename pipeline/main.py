@@ -156,10 +156,14 @@ class Pipeline:
             return stats
 
         # Step 3: L1 Filter
-        logger.info(f"Starting L1 filter on {len(articles)} articles "
-                     f"(discard<={self.config.tier_discard_max}, compressed<={self.config.tier_compressed_max})")
-        articles = self.l1.filter_batch(articles, config=self.config)
-        stats["l1_passed"] = len(articles)
+        try:
+            logger.info(f"Starting L1 filter on {len(articles)} articles "
+                         f"(discard<={self.config.tier_discard_max}, compressed<={self.config.tier_compressed_max})")
+            articles = self.l1.filter_batch(articles, config=self.config)
+            stats["l1_passed"] = len(articles)
+        except Exception as e:
+            logger.error(f"L1 filter failed: {e}")
+            stats["errors"] += 1
 
         if not articles:
             logger.info("No articles passed L1 filter")
@@ -167,28 +171,40 @@ class Pipeline:
             return stats
 
         # Step 4: L2 Summarize
-        logger.info(f"Starting L2 summarization on {len(articles)} articles")
-        articles = self.l2.summarize_batch(articles)
-        stats["l2_summarized"] = len(articles)
+        try:
+            logger.info(f"Starting L2 summarization on {len(articles)} articles")
+            articles = self.l2.summarize_batch(articles)
+            stats["l2_summarized"] = len(articles)
+        except Exception as e:
+            logger.error(f"L2 summarization failed: {e}")
+            stats["errors"] += 1
 
         # Step 4.5: L3 Deep Analysis (optional, only for high-score detailed articles)
         if self.l3:
-            l3_articles = [
-                a for a in articles
-                if a.relevance_score >= self.config.l3_min_score
-                and a.content_tier == "detailed"
-            ]
-            if l3_articles:
-                logger.info(f"Starting L3 deep analysis on {len(l3_articles)} articles "
-                            f"(score >= {self.config.l3_min_score})")
-                self.l3.analyze_batch(l3_articles)
-            else:
-                logger.info("No articles eligible for L3 analysis")
+            try:
+                l3_articles = [
+                    a for a in articles
+                    if a.relevance_score >= self.config.l3_min_score
+                    and a.content_tier == "detailed"
+                ]
+                if l3_articles:
+                    logger.info(f"Starting L3 deep analysis on {len(l3_articles)} articles "
+                                f"(score >= {self.config.l3_min_score})")
+                    self.l3.analyze_batch(l3_articles)
+                else:
+                    logger.info("No articles eligible for L3 analysis")
+            except Exception as e:
+                logger.error(f"L3 analysis failed: {e}")
+                stats["errors"] += 1
 
         # Step 5: Write to Obsidian
-        logger.info(f"Writing {len(articles)} articles to Obsidian vault")
-        paths = self.writer.write_batch(articles)
-        stats["written"] = len(paths)
+        try:
+            logger.info(f"Writing {len(articles)} articles to Obsidian vault")
+            paths = self.writer.write_batch(articles)
+            stats["written"] = len(paths)
+        except Exception as e:
+            logger.error(f"Obsidian write failed: {e}")
+            stats["errors"] += 1
 
         elapsed = time.time() - start_time
         logger.info(

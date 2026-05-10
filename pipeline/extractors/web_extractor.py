@@ -63,25 +63,20 @@ def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
         author = ""
         published = None
 
-        # Extract clean text
-        content = trafilatura.extract(
+        # Single JSON extraction: trafilatura JSON output includes both text and metadata
+        metadata = trafilatura.extract(
             downloaded,
+            output_format='json',
             include_comments=False,
             include_tables=True,
             favor_precision=True,
             include_links=True,
         )
 
-        # Extract metadata
-        metadata = trafilatura.extract(
-            downloaded,
-            output_format='json',
-            include_comments=False,
-        )
-
         if metadata:
             try:
                 meta = json.loads(metadata)
+                content = meta.get('text', '')
                 title = meta.get('title', '')
                 author = meta.get('author', '')
                 date_str = meta.get('date', '')
@@ -92,6 +87,16 @@ def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
                         pass
             except (json.JSONDecodeError, TypeError):
                 pass
+
+        # Fallback: if JSON extraction failed to get content, try plain text
+        if not content:
+            content = trafilatura.extract(
+                downloaded,
+                include_comments=False,
+                include_tables=True,
+                favor_precision=True,
+                include_links=True,
+            )
 
         # Title fallback chain: trafilatura → HTML <title> → <h1>
         if not title and downloaded:
