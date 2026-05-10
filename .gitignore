@@ -5,3 +5,27 @@ __pycache__/
 .env
 *.db
 *.sqlite
+
+# IDE
+.idea/
+
+# Logs
+pipeline/logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Obsidian user-specific / auto-generated (exclude from repo)
+vault/SouthTwilight-Obsidian/.obsidian/workspace.json
+vault/SouthTwilight-Obsidian/.obsidian/workspace-mobile.json
+vault/SouthTwilight-Obsidian/.obsidian/core-plugins.json
+vault/SouthTwilight-Obsidian/.obsidian/appearance.json
+vault/SouthTwilight-Obsidian/.obsidian/community-plugins.json
+vault/SouthTwilight-Obsidian/.obsidian/app.json
+# Obsidian plugins: exclude large JS bundles, keep manifest + data
+vault/SouthTwilight-Obsidian/.obsidian/plugins/*/main.js
+vault/SouthTwilight-Obsidian/.obsidian/plugins/*/styles.css
+vault/SouthTwilight-Obsidian/.obsidian/plugins/*/data.json

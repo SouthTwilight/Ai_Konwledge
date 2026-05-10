@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration
+        PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd">
+<configuration>
+    <!--settings：控制mybatis全局行为-->
+    <settings>
+        <!--设置mybatis输出日志-->
+        <setting name="logImpl" value="STDOUT_LOGGING"/>
+    </settings>
+
+    <!--设置别名-->
+    <typeAliases>
+        <typeAlias alias="user" type="com.sunzhen.mybatis.dto.User"/>
+    </typeAliases>
+
+    <environments default="mysql">
+        <environment id="mysql">
+            <transactionManager type="JDBC"/>
+            <dataSource type="POOLED">
+                <property name="driver" value="com.mysql.jdbc.Driver"/>
+                <property name="url" value="jdbc:mysql://rm-wz9ek6661pv9y24dm3o.mysql.rds.aliyuncs.com:3306/spring5?useSSL=false"/>
+                <property name="username" value="sunzhen"/>
+                <property name="password" value="SUNZHEN@5251"/>
+            </dataSource>
+        </environment>
+    </environments>
+
+    <!-- sql mapper(sql映射文件)的位置-->
+    <mappers>
+        <mapper resource="UserDaoMapper.xml"/>
+    </mappers>
+</configuration>
