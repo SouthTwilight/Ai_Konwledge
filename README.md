@@ -544,9 +544,3 @@ knowledge-base/
 - [x] **Phase 2（扩展）** — Hermes Cron 定时调度、GitHub Release 提取器、Email Newsletter 提取器
 - [x] **Phase 3（深度分析）** — GitHub 项目能力分析、L3 深度分析（GLM-5.1）、主题聚类（Embedding + HDBSCAN）、MOC 知识地图、标题回退链、URL 去重规范化增强
 - [x] **模型配置动态化** — YAML 驱动的多 profile 模型配置、api_key_env 环境变量声明、MODEL_PROFILE 切换、extra_body 参数化
-
----
-
-## 许可证
-
-个人项目，保留所有权利。
