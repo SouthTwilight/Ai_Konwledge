@@ -52,10 +52,23 @@ class FeishuConfig:
 
 
 @dataclass
+class EmailConfig:
+    """IMAP email configuration for Newsletter extraction."""
+    imap_server: str = ""
+    imap_port: int = 993
+    username: str = ""
+    app_password: str = ""  # Environment variable: EMAIL_APP_PASSWORD
+    sender_whitelist: List[str] = field(default_factory=list)  # Allowed sender addresses
+    max_emails: int = 10
+    mark_as_read: bool = True
+
+
+@dataclass
 class PipelineConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     rss_sources: List[RSSSource] = field(default_factory=list)
     feishu: FeishuConfig = field(default_factory=FeishuConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
     vault_path: Path = VAULT_DIR
     # Tier thresholds for score-tiered content depth
     tier_discard_max: int = 3      # Scores 1-3: discarded entirely
@@ -74,6 +87,13 @@ class PipelineConfig:
             self.feishu.app_id = os.getenv('FEISHU_APP_ID', '')
         if not self.feishu.app_secret:
             self.feishu.app_secret = os.getenv('FEISHU_APP_SECRET', '')
+        # Load Email credentials from env
+        if not self.email.app_password:
+            self.email.app_password = os.getenv('EMAIL_APP_PASSWORD', '')
+        if not self.email.username:
+            self.email.username = os.getenv('EMAIL_USERNAME', '')
+        if not self.email.imap_server:
+            self.email.imap_server = os.getenv('EMAIL_IMAP_SERVER', '')
         # Ensure data dir exists
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 

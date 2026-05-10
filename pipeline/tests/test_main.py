@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 
 from pipeline.models import Article, ArticleSource, ProcessingLevel
-from pipeline.config import PipelineConfig, ModelConfig, FeishuConfig
+from pipeline.config import PipelineConfig, ModelConfig, FeishuConfig, EmailConfig
 from pipeline.main import Pipeline
 
 
@@ -13,6 +13,12 @@ def mock_config(tmp_path):
     return PipelineConfig(
         model=ModelConfig(api_key="test-key"),
         feishu=FeishuConfig(app_id="test_app", app_secret="test_secret"),
+        email=EmailConfig(
+            imap_server="imap.test.com",
+            username="test@test.com",
+            app_password="test-pass",
+            sender_whitelist=["test.com"],
+        ),
         vault_path=tmp_path / "vault",
         dedup_db_path=":memory:",
         tier_discard_max=3,
@@ -129,3 +135,97 @@ class TestPipeline:
 
         assert stats["fetched"] == 1
         assert stats["written"] == 1
+
+    @patch("pipeline.main.L2Summarizer")
+    @patch("pipeline.main.L1Filter")
+    @patch("pipeline.extractors.github_extractor.httpx.get")
+    def test_github_source(self, mock_httpx, mock_l1_cls, mock_l2_cls, mock_config):
+        """Test --source github extracts releases and processes them."""
+        mock_httpx.return_value = MagicMock(
+            status_code=200,
+            json=lambda: [{
+                "tag_name": "v1.0.0",
+                "name": "v1.0.0",
+                "body": "First release",
+                "html_url": "https://github.com/user/repo/releases/tag/v1.0.0",
+                "published_at": "2026-05-10T08:00:00Z",
+                "draft": False,
+                "prerelease": False,
+                "author": {"login": "dev"},
+            }],
+            headers={},
+            raise_for_status=MagicMock(),
+        )
+
+        article = Article(
+            url="https://github.com/user/repo/releases/tag/v1.0.0",
+            title="repo v1.0.0",
+            source=ArticleSource.GITHUB,
+            content_raw="First release",
+            source_name="user/repo",
+            relevance_score=8,
+            content_tier="detailed",
+            processing_level=ProcessingLevel.L1_FILTERED,
+            tags=["github", "release"],
+        )
+
+        mock_l1 = MagicMock()
+        mock_l1.filter_batch.return_value = [article]
+        mock_l1_cls.return_value = mock_l1
+
+        mock_l2 = MagicMock()
+        article.content_summary = "Summary"
+        article.processing_level = ProcessingLevel.L2_SUMMARIZED
+        mock_l2.summarize_batch.return_value = [article]
+        mock_l2_cls.return_value = mock_l2
+
+        p = Pipeline(mock_config)
+        stats = p.run(source="github", github_repos=["user/repo"])
+
+        assert stats["fetched"] >= 1
+        assert stats["written"] >= 1
+
+    @patch("pipeline.main.L2Summarizer")
+    @patch("pipeline.main.L1Filter")
+    @patch("imaplib.IMAP4_SSL")
+    def test_email_source(self, mock_imap, mock_l1_cls, mock_l2_cls, mock_config):
+        """Test --source email extracts newsletters and processes them."""
+        from email.mime.text import MIMEText
+
+        mock_mail = MagicMock()
+        mock_mail.search.return_value = ("OK", [b"1"])
+        msg = MIMEText("Newsletter content here.")
+        msg["Subject"] = "Test Newsletter"
+        msg["From"] = "news@test.com"
+        msg["Date"] = "Sat, 10 May 2026 08:00:00 +0000"
+        msg["Message-ID"] = "<test@test.com>"
+        mock_mail.fetch.return_value = ("OK", [(b"1 (RFC822 {123}", msg.as_bytes()), b")"])
+        mock_imap.return_value = mock_mail
+
+        article = Article(
+            url="email://abc123",
+            title="Test Newsletter",
+            source=ArticleSource.EMAIL,
+            content_raw="Newsletter content here.",
+            source_name="news@test.com",
+            relevance_score=7,
+            content_tier="compressed",
+            processing_level=ProcessingLevel.L1_FILTERED,
+            tags=["newsletter"],
+        )
+
+        mock_l1 = MagicMock()
+        mock_l1.filter_batch.return_value = [article]
+        mock_l1_cls.return_value = mock_l1
+
+        mock_l2 = MagicMock()
+        article.content_summary = "Summary"
+        article.processing_level = ProcessingLevel.L2_SUMMARIZED
+        mock_l2.summarize_batch.return_value = [article]
+        mock_l2_cls.return_value = mock_l2
+
+        p = Pipeline(mock_config)
+        stats = p.run(source="email")
+
+        assert stats["fetched"] >= 1
+        assert stats["written"] >= 1

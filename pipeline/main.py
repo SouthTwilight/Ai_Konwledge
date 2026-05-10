@@ -3,6 +3,9 @@
 Usage:
     python -m pipeline.main --source rss [--dry-run] [--limit N]
     python -m pipeline.main --source url --url https://example.com/article
+    python -m pipeline.main --source feishu --feishu-url https://feishu.cn/docx/xxx
+    python -m pipeline.main --source github [--github-repos user/repo1 user/repo2]
+    python -m pipeline.main --source email
 """
 from __future__ import annotations
 
@@ -94,15 +97,17 @@ class Pipeline:
         source: str = "rss",
         url: Optional[str] = None,
         feishu_url: Optional[str] = None,
+        github_repos: Optional[list] = None,
         dry_run: bool = False,
         limit: Optional[int] = None,
     ) -> dict:
         """Execute the full pipeline.
 
         Args:
-            source: Content source type ("rss", "url", or "feishu")
+            source: Content source type ("rss", "url", "feishu", "github", "email")
             url: Single URL to process (for --source url)
             feishu_url: Feishu document URL (for --source feishu)
+            github_repos: Specific GitHub repos to check (for --source github)
             dry_run: If True, skip writing files and LLM calls
             limit: Max articles to process
 
@@ -125,7 +130,7 @@ class Pipeline:
         logger.info(f"Model config: L1={self.config.model.l1_model}, "
                      f"L2={self.config.model.l2_model}, "
                      f"api_base={self.config.model.api_base}")
-        articles = self._extract(source, url, feishu_url)
+        articles = self._extract(source, url, feishu_url, github_repos)
         stats["fetched"] = len(articles)
 
         if limit:
@@ -180,7 +185,7 @@ class Pipeline:
         self.dedup.close()
         return stats
 
-    def _extract(self, source: str, url: Optional[str], feishu_url: Optional[str] = None) -> List[Article]:
+    def _extract(self, source: str, url: Optional[str], feishu_url: Optional[str] = None, github_repos: Optional[list] = None) -> List[Article]:
         """Extract articles from the specified source."""
         if source == "rss":
             logger.info(f"Fetching from {len(self.config.rss_sources)} RSS sources")
@@ -201,36 +206,25 @@ class Pipeline:
             article = extract_feishu_doc(feishu_url, self.config.feishu)
             return [article] if article else []
 
+        elif source == "github":
+            from pipeline.extractors.github_extractor import extract_github_releases
+            return extract_github_releases(repos=github_repos)
+
+        elif source == "email":
+            from pipeline.extractors.email_extractor import extract_emails
+            return extract_emails(
+                imap_server=self.config.email.imap_server,
+                imap_port=self.config.email.imap_port,
+                username=self.config.email.username,
+                app_password=self.config.email.app_password,
+                sender_whitelist=self.config.email.sender_whitelist,
+                max_emails=self.config.email.max_emails,
+                mark_as_read=self.config.email.mark_as_read,
+            )
+
         else:
             logger.error(f"Unknown source: {source}")
             return []
-
-    def run_resolve(self, article_path: str, max_links: int = 5) -> dict:
-        """Run link resolution on a single processed article.
-
-        Args:
-            article_path: Path to the .md file in vault.
-            max_links: Maximum linked articles to resolve.
-
-        Returns:
-            Stats dict from link_resolver.
-        """
-        from pipeline.processors.link_resolver import resolve_linked_articles
-
-        start_time = time.time()
-
-        logger.info(f"=== Link resolution start: path={article_path} max_links={max_links} ===")
-        stats = resolve_linked_articles(article_path, self, max_links)
-
-        elapsed = time.time() - start_time
-        logger.info(
-            f"=== Link resolution complete in {elapsed:.1f}s: "
-            f"{stats['links_found']} found, {stats['fetched']} fetched, "
-            f"{stats['written']} written, {stats['errors']} errors ==="
-        )
-
-        self.dedup.close()
-        return stats
 
 
 def main():
@@ -238,7 +232,7 @@ def main():
         description="Personal AI Knowledge Base Pipeline"
     )
     parser.add_argument(
-        "--source", choices=["rss", "url", "feishu", "resolve"], default="rss",
+        "--source", choices=["rss", "url", "feishu", "github", "email"], default="rss",
         help="Content source type"
     )
     parser.add_argument("--url", help="Single URL to process (with --source url)")
@@ -247,12 +241,8 @@ def main():
         help="Feishu document URL (with --source feishu)"
     )
     parser.add_argument(
-        "--from", dest="from_path", type=str, default=None,
-        help="Path to processed article .md file (with --source resolve)"
-    )
-    parser.add_argument(
-        "--max-links", type=int, default=5,
-        help="Max linked articles to resolve (with --source resolve, default: 5)"
+        "--github-repos", nargs="+", default=None,
+        help="Specific GitHub repos to check (with --source github). E.g. --github-repos user/repo1 user/repo2"
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -273,26 +263,12 @@ def main():
     if args.source == "rss":
         logger.info(f"Loaded {len(config.rss_sources)} RSS source(s) from config")
 
-    # Handle --source resolve separately (operates on existing .md file)
-    if args.source == "resolve":
-        if not args.from_path:
-            logger.error("--from <path> required when --source resolve")
-            sys.exit(1)
-        pipeline = Pipeline(config)
-        stats = pipeline.run_resolve(args.from_path, max_links=args.max_links)
-        print(f"\n{'='*50}")
-        print(f"Link Resolution Summary:")
-        for k, v in stats.items():
-            print(f"  {k}: {v}")
-        print(f"  Log: {log_path}")
-        print(f"{'='*50}\n")
-        sys.exit(0 if stats["errors"] == 0 else 1)
-
     pipeline = Pipeline(config)
     stats = pipeline.run(
         source=args.source,
         url=args.url,
         feishu_url=args.feishu_url,
+        github_repos=args.github_repos,
         dry_run=args.dry_run,
         limit=args.limit,
     )
