@@ -77,6 +77,9 @@ class PipelineConfig:
     max_articles_per_run: int = 50
     dedup_db_path: Path = DATA_DIR / 'seen_articles.db'
     log_level: str = "INFO"
+    # L3 deep analysis settings
+    l3_enabled: bool = True
+    l3_min_score: int = 7  # Only analyze articles with score >= this
 
     def __post_init__(self):
         # Load API key from env

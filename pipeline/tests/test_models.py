@@ -34,27 +34,3 @@ def test_article_source_enum():
 def test_processing_level_enum():
     assert ProcessingLevel.RAW.value == "raw"
     assert ProcessingLevel.L2_SUMMARIZED.value == "l2"
-
-
-def test_article_has_linked_urls_field():
-    a = Article(url="https://example.com/a", title="Test", source=ArticleSource.WEB_URL)
-    assert a.linked_urls == []
-
-
-def test_article_has_referenced_by_field():
-    a = Article(url="https://example.com/a", title="Test", source=ArticleSource.WEB_URL)
-    assert a.referenced_by == []
-
-
-def test_article_linked_urls_in_to_dict():
-    a = Article(url="https://example.com/a", title="Test", source=ArticleSource.WEB_URL)
-    a.linked_urls = ["https://example.com/ref1", "https://example.com/ref2"]
-    d = a.to_dict()
-    assert d["linked_urls"] == ["https://example.com/ref1", "https://example.com/ref2"]
-
-
-def test_article_referenced_by_in_to_dict():
-    a = Article(url="https://example.com/a", title="Test", source=ArticleSource.WEB_URL)
-    a.referenced_by = ["2-Articles/2026-05-09/ref.md"]
-    d = a.to_dict()
-    assert d["referenced_by"] == ["2-Articles/2026-05-09/ref.md"]

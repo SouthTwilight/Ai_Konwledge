@@ -140,33 +140,40 @@ class TestPipeline:
     @patch("pipeline.main.L1Filter")
     @patch("pipeline.extractors.github_extractor.httpx.get")
     def test_github_source(self, mock_httpx, mock_l1_cls, mock_l2_cls, mock_config):
-        """Test --source github extracts releases and processes them."""
-        mock_httpx.return_value = MagicMock(
-            status_code=200,
-            json=lambda: [{
-                "tag_name": "v1.0.0",
-                "name": "v1.0.0",
-                "body": "First release",
-                "html_url": "https://github.com/user/repo/releases/tag/v1.0.0",
-                "published_at": "2026-05-10T08:00:00Z",
-                "draft": False,
-                "prerelease": False,
-                "author": {"login": "dev"},
-            }],
-            headers={},
-            raise_for_status=MagicMock(),
-        )
+        """Test --source github extracts project info and processes them."""
+        def mock_get(url, **kwargs):
+            if "/readme" in url:
+                return MagicMock(
+                    status_code=200, text="# Test Project\n\nA test project.",
+                    headers={}, raise_for_status=MagicMock(), json=MagicMock(return_value={}),
+                )
+            # repo info
+            return MagicMock(
+                status_code=200,
+                json=lambda: {
+                    "description": "Test project",
+                    "topics": ["test"],
+                    "language": "Python",
+                    "stargazers_count": 100,
+                    "html_url": "https://github.com/user/repo",
+                    "homepage": "",
+                    "fork": False,
+                },
+                headers={}, raise_for_status=MagicMock(),
+            )
+
+        mock_httpx.side_effect = mock_get
 
         article = Article(
-            url="https://github.com/user/repo/releases/tag/v1.0.0",
-            title="repo v1.0.0",
+            url="https://github.com/user/repo",
+            title="repo: Test project",
             source=ArticleSource.GITHUB,
-            content_raw="First release",
+            content_raw="# Test Project\n\nA test project.",
             source_name="user/repo",
             relevance_score=8,
             content_tier="detailed",
             processing_level=ProcessingLevel.L1_FILTERED,
-            tags=["github", "release"],
+            tags=["github", "python"],
         )
 
         mock_l1 = MagicMock()

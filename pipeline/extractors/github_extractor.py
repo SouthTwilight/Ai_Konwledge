@@ -1,13 +1,14 @@
-"""GitHub Release Extractor — fetch releases from starred repos via GitHub REST API.
+"""GitHub Project Analyzer — fetch and analyze starred repos' README.
 
-Uses the GitHub API to list starred repositories, then fetches recent releases
-for each repo. Each release is converted to an Article for pipeline processing.
+Analyzes GitHub repositories by fetching their README and metadata,
+producing Article objects that describe what each project does.
 
 Environment variables:
     GITHUB_TOKEN: GitHub personal access token (required for starred repos API)
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
 from datetime import datetime, timezone
@@ -31,10 +32,10 @@ def _get_github_token() -> str:
     return token
 
 
-def _api_headers(token: str) -> dict:
+def _api_headers(token: str, accept: str = "application/vnd.github+json") -> dict:
     """Build standard GitHub API headers."""
     headers = {
-        "Accept": "application/vnd.github+json",
+        "Accept": accept,
         "X-GitHub-Api-Version": "2022-11-28",
     }
     if token:
@@ -99,99 +100,150 @@ def get_starred_repos(
     return repos[:max_repos]
 
 
-def fetch_releases(
-    repo: str,
-    token: str = "",
-    limit: int = 3,
-) -> List[dict]:
-    """Fetch recent releases for a single repository.
+def fetch_readme(repo: str, token: str = "") -> str:
+    """Fetch README content for a repository.
+
+    Tries raw Markdown first, falls back to base64-decoded content.
 
     Args:
         repo: Repository full name (owner/repo).
         token: GitHub personal access token.
-        limit: Max releases to fetch per repo.
 
     Returns:
-        List of release dicts from GitHub API.
+        README text content, or empty string on failure.
+    """
+    if not token:
+        token = _get_github_token()
+
+    # Try raw Markdown endpoint first
+    headers = _api_headers(token, accept="application/vnd.github.raw+json")
+    url = f"{GITHUB_API}/repos/{repo}/readme"
+
+    try:
+        resp = httpx.get(url, headers=headers, timeout=30)
+        if resp.status_code == 200:
+            return resp.text
+        if resp.status_code == 404:
+            logger.debug(f"No README found for {repo}")
+            return ""
+        if resp.status_code == 403:
+            logger.warning(f"Rate limited fetching README for {repo}")
+            return ""
+        resp.raise_for_status()
+        return resp.text
+
+    except httpx.HTTPError as e:
+        logger.error(f"Error fetching README for {repo}: {e}")
+        return ""
+
+
+def fetch_repo_info(repo: str, token: str = "") -> dict:
+    """Fetch repository metadata.
+
+    Args:
+        repo: Repository full name (owner/repo).
+        token: GitHub personal access token.
+
+    Returns:
+        Dict with description, topics, language, stars, html_url, etc.
     """
     if not token:
         token = _get_github_token()
 
     headers = _api_headers(token)
-    url = f"{GITHUB_API}/repos/{repo}/releases"
-    params = {"per_page": limit}
+    url = f"{GITHUB_API}/repos/{repo}"
 
     try:
-        resp = httpx.get(url, headers=headers, params=params, timeout=30)
-        if resp.status_code == 404:
-            logger.debug(f"No releases for {repo}")
-            return []
+        resp = httpx.get(url, headers=headers, timeout=30)
         if resp.status_code == 403:
-            logger.warning(f"Rate limited fetching releases for {repo}")
-            return []
+            logger.warning(f"Rate limited fetching info for {repo}")
+            return {}
+        if resp.status_code == 404:
+            logger.debug(f"Repo not found: {repo}")
+            return {}
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        return {
+            "description": data.get("description", ""),
+            "topics": data.get("topics", []),
+            "language": data.get("language", ""),
+            "stars": data.get("stargazers_count", 0),
+            "html_url": data.get("html_url", f"https://github.com/{repo}"),
+            "homepage": data.get("homepage", ""),
+            "fork": data.get("fork", False),
+        }
 
     except httpx.HTTPError as e:
-        logger.error(f"Error fetching releases for {repo}: {e}")
-        return []
+        logger.error(f"Error fetching info for {repo}: {e}")
+        return {}
 
 
-def _parse_release_date(date_str: str) -> Optional[datetime]:
-    """Parse ISO 8601 date string from GitHub API."""
-    if not date_str:
-        return None
-    try:
-        # GitHub returns e.g. "2026-05-10T08:30:00Z"
-        return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        return None
+def _repo_to_article(repo: str, info: dict, readme: str) -> Article:
+    """Convert repo info + README into an Article object.
 
+    Args:
+        repo: Repository full name (owner/repo).
+        info: Repository metadata from fetch_repo_info.
+        readme: README content.
 
-def _release_to_article(release: dict, repo: str) -> Article:
-    """Convert a GitHub release dict to an Article object."""
-    tag_name = release.get("tag_name", "")
-    release_name = release.get("name", "") or tag_name
-    body = release.get("body", "") or ""
-    html_url = release.get("html_url", "")
-    published_at = _parse_release_date(release.get("published_at", ""))
+    Returns:
+        Article representing this project.
+    """
+    short_name = repo.split("/")[-1]
+    description = info.get("description", "")
+    topics = info.get("topics", [])
+    language = info.get("language", "")
+    stars = info.get("stars", 0)
+    html_url = info.get("html_url", f"https://github.com/{repo}")
 
-    # Build a readable title: "repo: tag - name"
-    short_repo = repo.split("/")[-1]
-    title = f"{short_repo} {tag_name}"
-    if release_name and release_name != tag_name:
-        title = f"{short_repo} {tag_name}: {release_name}"
+    # Title: "repo-name: description" or just "repo-name"
+    if description:
+        title = f"{short_name}: {description}"
+    else:
+        title = short_name
+
+    # Tags from GitHub topics + language
+    tags = list(topics)
+    if language and language.lower() not in [t.lower() for t in tags]:
+        tags.append(language.lower())
+    if "github" not in tags:
+        tags.append("github")
+
+    # Content: README or fallback to description
+    content_raw = readme if readme else (description or f"*No README available for {repo}.*")
 
     article = Article(
-        url=html_url or f"https://github.com/{repo}/releases",
+        url=html_url,
         title=title,
         source=ArticleSource.GITHUB,
-        content_raw=body if body else f"*Release {tag_name} — no release notes provided.*",
-        author=release.get("author", {}).get("login", ""),
-        published_at=published_at,
+        content_raw=content_raw,
+        author=repo.split("/")[0],
+        published_at=datetime.now(timezone.utc),
         source_name=repo,
-        tags=["github", "release"],
+        tags=tags[:8],  # Cap at 8 tags
     )
     article.compute_hash()
     return article
 
 
-def extract_github_releases(
+def extract_github_projects(
     repos: Optional[List[str]] = None,
     max_repos: int = 20,
-    releases_per_repo: int = 3,
     token: str = "",
 ) -> List[Article]:
-    """Main entry point: fetch releases from starred repos → Articles.
+    """Main entry point: analyze GitHub projects → Articles.
+
+    Fetches README and metadata for each repo, producing Article objects
+    that describe what each project does.
 
     Args:
-        repos: Optional list of specific repos to check. If None, uses starred repos.
+        repos: Optional list of specific repos (owner/repo).
+               If None, uses starred repos.
         max_repos: Max starred repos to process (ignored if repos is provided).
-        releases_per_repo: Max releases to fetch per repo.
         token: GitHub personal access token (falls back to GITHUB_TOKEN env var).
 
     Returns:
-        List of Article objects, one per release found.
+        List of Article objects, one per repo with a README.
     """
     if not token:
         token = _get_github_token()
@@ -201,23 +253,29 @@ def extract_github_releases(
         repos = get_starred_repos(token=token, max_repos=max_repos)
 
     if not repos:
-        logger.warning("No repos to check for releases")
+        logger.warning("No repos to analyze")
         return []
 
-    logger.info(f"Checking releases for {len(repos)} repos")
+    logger.info(f"Analyzing {len(repos)} repos")
 
     articles = []
     for repo in repos:
-        releases = fetch_releases(repo, token=token, limit=releases_per_repo)
-        for release in releases:
-            # Skip drafts
-            if release.get("draft", False):
-                continue
-            # Skip prereleases (configurable in future)
-            if release.get("prerelease", False):
-                continue
-            article = _release_to_article(release, repo)
-            articles.append(article)
+        info = fetch_repo_info(repo, token=token)
 
-    logger.info(f"Found {len(articles)} releases from {len(repos)} repos")
+        # Skip forks unless explicitly requested
+        if info.get("fork", False):
+            logger.debug(f"Skipping fork: {repo}")
+            continue
+
+        readme = fetch_readme(repo, token=token)
+
+        # Skip repos with no README and no description
+        if not readme and not info.get("description"):
+            logger.debug(f"Skipping repo with no content: {repo}")
+            continue
+
+        article = _repo_to_article(repo, info, readme)
+        articles.append(article)
+
+    logger.info(f"Generated {len(articles)} project articles from {len(repos)} repos")
     return articles

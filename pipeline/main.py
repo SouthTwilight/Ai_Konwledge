@@ -24,6 +24,7 @@ from pipeline.extractors.web_extractor import extract_url
 from pipeline.utils.dedup import DedupStore
 from pipeline.processors.l1_filter import L1Filter
 from pipeline.processors.l2_summarizer import L2Summarizer
+from pipeline.processors.l3_analyzer import L3Analyzer
 from pipeline.formatters.obsidian_writer import ObsidianWriter
 
 logger = logging.getLogger("pipeline")
@@ -90,6 +91,7 @@ class Pipeline:
         self.dedup = DedupStore(config.dedup_db_path)
         self.l1 = L1Filter(config.model)
         self.l2 = L2Summarizer(config.model)
+        self.l3 = L3Analyzer(config.model) if config.l3_enabled else None
         self.writer = ObsidianWriter(config.vault_path)
 
     def run(
@@ -169,6 +171,20 @@ class Pipeline:
         articles = self.l2.summarize_batch(articles)
         stats["l2_summarized"] = len(articles)
 
+        # Step 4.5: L3 Deep Analysis (optional, only for high-score detailed articles)
+        if self.l3:
+            l3_articles = [
+                a for a in articles
+                if a.relevance_score >= self.config.l3_min_score
+                and a.content_tier == "detailed"
+            ]
+            if l3_articles:
+                logger.info(f"Starting L3 deep analysis on {len(l3_articles)} articles "
+                            f"(score >= {self.config.l3_min_score})")
+                self.l3.analyze_batch(l3_articles)
+            else:
+                logger.info("No articles eligible for L3 analysis")
+
         # Step 5: Write to Obsidian
         logger.info(f"Writing {len(articles)} articles to Obsidian vault")
         paths = self.writer.write_batch(articles)
@@ -207,8 +223,8 @@ class Pipeline:
             return [article] if article else []
 
         elif source == "github":
-            from pipeline.extractors.github_extractor import extract_github_releases
-            return extract_github_releases(repos=github_repos)
+            from pipeline.extractors.github_extractor import extract_github_projects
+            return extract_github_projects(repos=github_repos)
 
         elif source == "email":
             from pipeline.extractors.email_extractor import extract_emails

@@ -36,6 +36,11 @@ class Article:
     content_summary: str = ""
     content_deep: str = ""
     
+    # L3 deep analysis fields
+    l3_concepts: List[dict] = field(default_factory=list)
+    l3_structure_type: str = ""  # "argument", "tutorial", "news", "analysis", ...
+    l3_key_insight: str = ""
+    
     author: str = ""
     published_at: Optional[datetime] = None
     fetched_at: datetime = field(default_factory=datetime.now)
@@ -51,9 +56,6 @@ class Article:
     
     content_hash: str = ""
     obsidian_path: str = ""
-
-    linked_urls: List[str] = field(default_factory=list)
-    referenced_by: List[str] = field(default_factory=list)
     
     def compute_hash(self) -> str:
         import hashlib

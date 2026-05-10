@@ -1,6 +1,13 @@
+"""Web Content Extractor — extract articles from URLs.
+
+Uses trafilatura for static content extraction.
+Includes title fallback chain: trafilatura → HTML <title> → <h1> → URL slug.
+"""
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import datetime
 from typing import List, Optional
 
@@ -11,8 +18,38 @@ from pipeline.models import Article, ArticleSource
 logger = logging.getLogger(__name__)
 
 
+def _extract_title_from_html(html: str) -> str:
+    """Extract title from HTML using fallback chain: <title> → <h1> → empty."""
+    # Try <title> tag
+    match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+    if match:
+        title = match.group(1).strip()
+        # Clean up common suffixes like " - Blog Name"
+        title = re.sub(r'\s*[|\-–—].*$', '', title)
+        if title:
+            return title
+
+    # Try first <h1>
+    match = re.search(r'<h1[^>]*>(.*?)</h1>', html, re.IGNORECASE | re.DOTALL)
+    if match:
+        # Strip inner HTML tags
+        h1 = re.sub(r'<[^>]+>', '', match.group(1)).strip()
+        if h1:
+            return h1
+
+    return ""
+
+
 def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
-    """Extract article content from a single URL."""
+    """Extract article content from a single URL.
+
+    Args:
+        url: URL to extract.
+        source_name: Name of the source for metadata.
+
+    Returns:
+        Article object, or None on failure.
+    """
     logger.info(f"Extracting URL: {url}")
 
     try:
@@ -20,6 +57,11 @@ def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
         if not downloaded:
             logger.warning(f"Failed to download: {url}")
             return None
+
+        content = None
+        title = ""
+        author = ""
+        published = None
 
         # Extract clean text
         content = trafilatura.extract(
@@ -29,24 +71,16 @@ def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
             favor_precision=True,
             include_links=True,
         )
-        if not content:
-            logger.warning(f"Failed to extract content: {url}")
-            return None
 
-        # Try to extract metadata
+        # Extract metadata
         metadata = trafilatura.extract(
             downloaded,
             output_format='json',
             include_comments=False,
         )
 
-        title = ""
-        author = ""
-        published = None
-
         if metadata:
             try:
-                import json
                 meta = json.loads(metadata)
                 title = meta.get('title', '')
                 author = meta.get('author', '')
@@ -59,9 +93,22 @@ def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
             except (json.JSONDecodeError, TypeError):
                 pass
 
+        # Title fallback chain: trafilatura → HTML <title> → <h1>
+        if not title and downloaded:
+            title = _extract_title_from_html(downloaded)
+
+        if not content:
+            logger.warning(f"Failed to extract content: {url}")
+            return None
+
+        # Final title fallback: URL slug
+        if not title:
+            slug = url.rstrip('/').split('/')[-1]
+            title = slug[:50].replace('-', ' ').replace('_', ' ') or "Untitled"
+
         article = Article(
             url=url,
-            title=title or url.split('/')[-1][:50] or "Untitled",
+            title=title,
             source=ArticleSource.WEB_URL,
             content_raw=content,
             author=author,
@@ -77,7 +124,15 @@ def extract_url(url: str, source_name: str = "web") -> Optional[Article]:
 
 
 def extract_urls(urls: List[str], source_name: str = "web") -> List[Article]:
-    """Extract multiple URLs into Article objects."""
+    """Extract multiple URLs into Article objects.
+
+    Args:
+        urls: List of URLs to extract.
+        source_name: Name of the source.
+
+    Returns:
+        List of successfully extracted Article objects.
+    """
     articles = []
     for url in urls:
         article = extract_url(url, source_name)

@@ -1,12 +1,18 @@
+"""Deduplication store — URL-based dedup with enhanced normalization.
+
+Uses SQLite for persistent dedup. URL normalization includes:
+- Trailing slash removal
+- Tracking parameter stripping (utm_*, fbclid, gclid, ref, source)
+- Fragment removal
+"""
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List, Set
+from typing import List
 
 from pipeline.models import Article
 
@@ -14,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class DedupStore:
-    """SQLite-backed deduplication store for articles."""
+    """SQLite-backed URL deduplication store for articles."""
 
     def __init__(self, db_path: str | Path = ":memory:"):
         self.db_path = str(db_path)
@@ -42,22 +48,36 @@ class DedupStore:
         return self._conn
 
     def _url_hash(self, url: str) -> str:
-        """Normalize and hash URL for dedup."""
-        # Strip trailing slashes and query params for normalization
+        """Normalize and hash URL for dedup.
+
+        Normalization steps:
+        1. Strip trailing slash
+        2. Remove tracking params (utm_*, ref=, source=, fbclid, gclid)
+        3. Remove fragment (#section)
+        """
         normalized = url.rstrip('/')
-        # Remove common tracking params
+
+        # Remove tracking params
         if '?' in normalized:
             base, params = normalized.split('?', 1)
             keep = [p for p in params.split('&')
-                    if not p.startswith(('utm_', 'ref=', 'source='))]
+                    if not p.startswith(('utm_', 'ref=', 'source=', 'fbclid=', 'gclid='))]
             if keep:
                 normalized = base + '?' + '&'.join(keep)
             else:
                 normalized = base
+
+        # Remove fragment
+        if '#' in normalized:
+            normalized = normalized.split('#')[0]
+
+        # Strip trailing slash again after processing
+        normalized = normalized.rstrip('/')
+
         return hashlib.md5(normalized.encode()).hexdigest()
 
     def is_seen(self, article: Article) -> bool:
-        """Check if an article has been seen before."""
+        """Check if an article has been seen before (by URL)."""
         conn = self._get_conn()
         url_hash = self._url_hash(article.url)
         row = conn.execute(
@@ -93,3 +113,15 @@ class DedupStore:
         if self._conn:
             self._conn.close()
             self._conn = None
+
+    def stats(self) -> dict:
+        """Return dedup store statistics."""
+        conn = self._get_conn()
+        total = conn.execute('SELECT COUNT(*) FROM seen_articles').fetchone()[0]
+        sources = conn.execute(
+            'SELECT source, COUNT(*) FROM seen_articles GROUP BY source'
+        ).fetchall()
+        return {
+            "total_seen": total,
+            "by_source": dict(sources),
+        }

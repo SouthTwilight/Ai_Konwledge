@@ -86,13 +86,16 @@ class TestObsidianWriter:
     def test_write_github_article(self, writer):
         article = Article(
             url="https://github.com/test/repo",
-            title="Test Repo Release",
+            title="repo: AI code review tool",
             source=ArticleSource.GITHUB,
+            source_name="test/repo",
             tags=["open-source"],
             processing_level=ProcessingLevel.L2_SUMMARIZED,
         )
         path = writer.write_article(article)
+        # GitHub articles use repo name as subdirectory, not date
         assert "3-GitHub" in str(path)
+        assert "repo" in str(path)  # repo name from source_name
 
     def test_write_handles_collision(self, writer, processed_article):
         # Write same article twice
@@ -154,83 +157,3 @@ class TestObsidianWriter:
         )
         filename, _ = writer.format_article(article)
         assert not filename.startswith("[S"), f"Zero score should have no prefix, got: {filename}"
-
-
-# --- append_references / append_referenced_by tests ---
-
-class TestBacklinks:
-    """Tests for bidirectional link patching methods."""
-
-    def test_append_references_adds_wikilink_section(self, tmp_path):
-        """append_references inserts ## References before ## Personal Notes."""
-        content = "# Test\n\nBody text.\n\n## Personal Notes\n\nMy notes.\n"
-        md_file = tmp_path / "article.md"
-        md_file.write_text(content, encoding="utf-8")
-
-        writer = ObsidianWriter(tmp_path)
-        ref_article = Article(
-            url="https://ref.com/a", title="Referenced Article",
-            source=ArticleSource.WEB_URL, content_raw="ref content",
-            source_name="test",
-        )
-        ref_article.obsidian_path = "2-Articles/2026-05-09/ref-article.md"
-
-        writer.append_references(md_file, [ref_article])
-
-        updated = md_file.read_text(encoding="utf-8")
-        assert "## References" in updated
-        assert "[[Referenced Article]]" in updated
-        # References must appear before Personal Notes
-        assert updated.index("## References") < updated.index("## Personal Notes")
-
-    def test_append_references_appends_to_existing_section(self, tmp_path):
-        """If ## References already exists, append new links."""
-        content = "# Test\n\n## References\n\n[[Existing Ref]]\n\n## Personal Notes\n\nNotes.\n"
-        md_file = tmp_path / "article.md"
-        md_file.write_text(content, encoding="utf-8")
-
-        writer = ObsidianWriter(tmp_path)
-        ref = Article(url="https://ref.com/b", title="New Ref", source=ArticleSource.WEB_URL)
-        writer.append_references(md_file, [ref])
-
-        updated = md_file.read_text(encoding="utf-8")
-        assert "[[Existing Ref]]" in updated
-        assert "[[New Ref]]" in updated
-
-    def test_append_referenced_by_adds_frontmatter_field(self, tmp_path):
-        """append_referenced_by adds referenced_by to YAML frontmatter."""
-        vault = tmp_path / "vault"
-        vault.mkdir()
-        ref_dir = vault / "2-Articles" / "2026-05-09"
-        ref_dir.mkdir(parents=True)
-
-        ref_content = "---\ntitle: Ref Article\nsource: https://ref.com/a\ntags: [ai]\n---\n# Ref\n\nBody.\n\n## Personal Notes\n"
-        ref_file = ref_dir / "ref-article.md"
-        ref_file.write_text(ref_content, encoding="utf-8")
-
-        writer = ObsidianWriter(vault)
-        ref_article = Article(
-            url="https://ref.com/a", title="Ref Article",
-            source=ArticleSource.WEB_URL, content_raw="content",
-            source_name="test",
-        )
-        ref_article.obsidian_path = "2-Articles/2026-05-09/ref-article.md"
-
-        writer.append_referenced_by(ref_article, str(ref_file))
-
-        updated = ref_file.read_text(encoding="utf-8")
-        assert "referenced_by" in updated
-
-    def test_append_references_no_personal_notes(self, tmp_path):
-        """When no ## Personal Notes, References appended at end."""
-        content = "# Test\n\nBody text only.\n"
-        md_file = tmp_path / "article.md"
-        md_file.write_text(content, encoding="utf-8")
-
-        writer = ObsidianWriter(tmp_path)
-        ref = Article(url="https://r.com", title="R", source=ArticleSource.WEB_URL)
-        writer.append_references(md_file, [ref])
-
-        updated = md_file.read_text(encoding="utf-8")
-        assert "## References" in updated
-        assert "[[R]]" in updated
