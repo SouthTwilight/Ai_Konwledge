@@ -122,7 +122,7 @@ class L3Analyzer:
                     ],
                     max_tokens=self.config.max_tokens,
                     temperature=0.2,
-                    **(self.config.extra_body or {}),
+                    extra_body=(self.config.extra_body or {}),
                 ),
                 label=f"L3 analyze '{article.title[:30]}'",
             )

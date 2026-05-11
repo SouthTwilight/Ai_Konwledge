@@ -27,7 +27,7 @@ def test_rss_source():
 def test_level_model_config_defaults():
     mc = LevelModelConfig(api_key="test")
     assert mc.model == "glm-4.7"
-    assert mc.max_tokens == 1024
+    assert mc.max_tokens == 1024  # dataclass fallback default
     assert mc.base_url == "https://open.bigmodel.cn/api/paas/v4"
     assert mc.api_key_env == "GLM_API_KEY"
 
@@ -98,7 +98,7 @@ def test_default_config_loads_default_yaml():
     """Default config path should load pipeline/configs/default.yaml."""
     assert DEFAULT_CONFIG_PATH.exists()
     cfg = load_config()
-    assert len(cfg.rss_sources) == 8
+    assert len(cfg.rss_sources) == 7
     names = [s.name for s in cfg.rss_sources]
     assert "品玩" in names
     assert "阮一峰的网络日志" in names
@@ -110,9 +110,9 @@ def test_default_yaml_loads_models():
     """default.yaml has models.default — should load L1/L2/L3 configs."""
     cfg = load_config()
     assert cfg.l1_model.model == "glm-4.7"
-    assert cfg.l1_model.max_tokens == 1024
+    assert cfg.l1_model.max_tokens == 2048
     assert cfg.l2_model.model == "glm-4.7"
-    assert cfg.l2_model.max_tokens == 4096
+    assert cfg.l2_model.max_tokens == 8192
     assert cfg.l3_model.model == "glm-5.1"
     assert cfg.l3_model.max_tokens == 8192
 

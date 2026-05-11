@@ -53,8 +53,7 @@ Format:
   "tldr": "One-sentence summary (max 30 words)",
   "summary": "6-8 sentence structured summary covering main arguments, technical details, and conclusions",
   "key_points": ["Point 1 with context", "Point 2 with context", ...],
-  "related_topics": ["topic1", "topic2"],
-  "content_preserved": "Lightly compressed version of the original content, preserving ALL key paragraphs and technical details. Remove only: ads, navigation text, author bios, comment prompts, and obvious boilerplate. Keep ALL substantive content intact so readers don't need to visit the original URL."
+  "related_topics": ["topic1", "topic2"]
 }
 
 Rules:
@@ -62,9 +61,9 @@ Rules:
 - summary: 6-8 detailed sentences, cover what/why/how with technical specifics
 - key_points: 4-6 bullet points, each a standalone insight with detail
 - related_topics: 2-4 topics this relates to (for knowledge graph linking)
-- content_preserved: Preserve ALL substantive paragraphs from the original. Remove only boilerplate (ads, nav, bios). Readers should get the full article experience.
 - ALL text fields (tldr, summary, key_points, related_topics) MUST be written in Chinese (中文), regardless of the source article language
 - Be factual, no speculation
+- Do NOT include any "content_preserved" or "content_compressed" field — the original content will be preserved separately
 """
 
 USER_PROMPT_TEMPLATE = """\
@@ -134,7 +133,7 @@ class L2Summarizer:
                     ],
                     max_tokens=self.config.max_tokens,
                     temperature=0.3,
-                    **(self.config.extra_body or {}),
+                    extra_body=(self.config.extra_body or {}),
                 ),
                 label=f"L2 summarize '{article.title[:30]}'",
             )
@@ -166,11 +165,9 @@ class L2Summarizer:
             article.related_topics = result.get("related_topics", [])
             article.processing_level = ProcessingLevel.L2_SUMMARIZED
 
-            # For detailed tier: replace content_raw with lightly-compressed version
-            if article.content_tier == "detailed":
-                content_preserved = result.get("content_preserved", "")
-                if content_preserved:
-                    article.content_raw = content_preserved
+            # For detailed tier: original content is already preserved in content_raw
+            # (content_preserved removed from prompt to reduce output token pressure
+            # on long articles — original text is kept as-is instead)
 
             # Store TL;DR as first key point prefix for quick display
             tldr = result.get("tldr", "")

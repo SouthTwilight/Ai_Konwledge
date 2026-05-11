@@ -146,7 +146,7 @@ python -m pipeline.main [选项]
 
 RSS 源通过 YAML 配置文件管理，支持多个配置方案切换：
 
-**默认配置** `pipeline/configs/default.yaml`（8 个源）：
+**默认配置** `pipeline/configs/default.yaml`（7 个源）：
 
 | 名称 | 地址 | 分类 |
 |------|------|------|
@@ -154,7 +154,6 @@ RSS 源通过 YAML 配置文件管理，支持多个配置方案切换：
 | 极客公园 | www.geekpark.net/rss | ai |
 | 阮一峰的网络日志 | feeds.feedburner.com/ruanyifeng | tech |
 | 少数派 | sspai.com/feed | tech |
-| 贼拉正经的技术博客 | stackoverflow.wiki/blog/rss.xml | tech |
 | 掮客酒馆 | wechat2rss.xlab.app | tech |
 | 未闻Code | wechat2rss.xlab.app | tech |
 | 知乎日报 | plink.anyfeeder.com/zhihu/daily | tech |
@@ -497,7 +496,7 @@ knowledge-base/
 │   ├── requirements.txt         ← Python 依赖
 │   ├── .venv/                   ← Python 3.11 虚拟环境
 │   ├── configs/                 ← RSS 源配置文件
-│   │   ├── default.yaml         ← 默认配置（8 个源）
+│   │   ├── default.yaml         ← 默认配置（7 个源）
 │   │   └── tech-feeds.yaml      ← 技术精选（3 个源）
 │   ├── data/                    ← 运行时数据（seen_articles.db）
 │   ├── logs/                    ← 运行日志（pipeline_*.log）

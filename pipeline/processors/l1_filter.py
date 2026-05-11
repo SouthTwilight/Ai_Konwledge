@@ -123,7 +123,7 @@ class L1Filter:
                     ],
                     max_tokens=self.config.max_tokens,
                     temperature=0.1,
-                    **(self.config.extra_body or {}),
+                    extra_body=(self.config.extra_body or {}),
                 ),
                 label=f"L1 filter '{article.title[:30]}'",
             )
