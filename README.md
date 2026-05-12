@@ -146,15 +146,11 @@ python -m pipeline.main [选项]
 
 RSS 源通过 YAML 配置文件管理，支持多个配置方案切换：
 
-**默认配置** `pipeline/configs/default.yaml`（7 个源）：
+**默认配置** `pipeline/configs/default.yaml`（4 个源）：
 
 | 名称 | 地址 | 分类 |
 |------|------|------|
-| 品玩 | plink.anyfeeder.com/appinn | news |
 | 极客公园 | www.geekpark.net/rss | ai |
-| 阮一峰的网络日志 | feeds.feedburner.com/ruanyifeng | tech |
-| 少数派 | sspai.com/feed | tech |
-| 掮客酒馆 | wechat2rss.xlab.app | tech |
 | 未闻Code | wechat2rss.xlab.app | tech |
 | 知乎日报 | plink.anyfeeder.com/zhihu/daily | tech |
 
@@ -496,7 +492,7 @@ knowledge-base/
 │   ├── requirements.txt         ← Python 依赖
 │   ├── .venv/                   ← Python 3.11 虚拟环境
 │   ├── configs/                 ← RSS 源配置文件
-│   │   ├── default.yaml         ← 默认配置（7 个源）
+│   │   ├── default.yaml         ← 默认配置（4 个源）
 │   │   └── tech-feeds.yaml      ← 技术精选（3 个源）
 │   ├── data/                    ← 运行时数据（seen_articles.db）
 │   ├── logs/                    ← 运行日志（pipeline_*.log）
@@ -543,9 +539,3 @@ knowledge-base/
 - [x] **Phase 2（扩展）** — Hermes Cron 定时调度、GitHub Release 提取器、Email Newsletter 提取器
 - [x] **Phase 3（深度分析）** — GitHub 项目能力分析、L3 深度分析（GLM-5.1）、主题聚类（Embedding + HDBSCAN）、MOC 知识地图、标题回退链、URL 去重规范化增强
 - [x] **模型配置动态化** — YAML 驱动的多 profile 模型配置、api_key_env 环境变量声明、MODEL_PROFILE 切换、extra_body 参数化
-
----
-
-## 许可证
-
-个人项目，保留所有权利。
