@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import List, Optional
 
@@ -28,8 +29,15 @@ def fetch_rss(source: RSSSource) -> List[Article]:
         if not url:
             continue
         
-        # Extract full content via trafilatura
+        # 1. Try trafilatura first (works for most feeds)
         content_raw = _extract_content(url)
+        
+        # 2. If trafilatura failed, use feed-provided content
+        #    (covers WeWe RSS fulltext, newsletters, etc.)
+        if not content_raw or len(content_raw) < 100:
+            feed_content = _get_feed_content(entry)
+            if feed_content and len(feed_content) > len(content_raw):
+                content_raw = feed_content
         
         # Parse publish date
         published = None
@@ -43,7 +51,7 @@ def fetch_rss(source: RSSSource) -> List[Article]:
             url=url,
             title=entry.get('title', 'Untitled'),
             source=ArticleSource.RSS,
-            content_raw=content_raw or entry.get('summary', ''),
+            content_raw=content_raw,
             author=entry.get('author', ''),
             published_at=published,
             source_name=source.name,
@@ -53,6 +61,52 @@ def fetch_rss(source: RSSSource) -> List[Article]:
     
     logger.info(f"Fetched {len(articles)} articles from {source.name}")
     return articles
+
+
+def _get_feed_content(entry) -> str:
+    """Extract content from feed entry when trafilatura cannot.
+    
+    Checks multiple feed fields in priority order:
+    1. Atom <content> (entry.content[0].value) — WeWe RSS fulltext
+    2. RSS <content:encoded> (entry.content[0].value)
+    3. RSS <description> (entry.description) — if >200 chars, likely full content
+    4. RSS/Atom <summary> (entry.summary) — last resort, usually just a blurb
+    """
+    # Atom/RSS <content> or <content:encoded>
+    if hasattr(entry, 'content') and entry.content:
+        content_val = entry.content[0].get('value', '')
+        if content_val and len(content_val) > 100:
+            return _html_to_text(content_val)
+    
+    # RSS <description> (often contains HTML)
+    desc = entry.get('description', '')
+    if desc and len(desc) > 200:  # likely full content, not just a blurb
+        return _html_to_text(desc)
+    
+    # <summary> — last resort, usually just a short blurb
+    return entry.get('summary', '')
+
+
+def _html_to_text(html: str) -> str:
+    """Convert HTML to plain text using trafilatura's extractor.
+    Falls back to stripped tags if trafilatura fails."""
+    if not html:
+        return ""
+    try:
+        text = trafilatura.extract(
+            html, include_comments=False, include_tables=True,
+            favor_precision=True,
+        )
+        if text and len(text) > 50:
+            return text
+    except Exception:
+        pass
+    # Fallback: strip all HTML tags
+    text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 
 def _extract_content(url: str) -> str:
